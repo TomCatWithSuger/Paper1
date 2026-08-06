@@ -78,7 +78,8 @@ class FlowMatchingLitModule(LightningModule):
         """Perform a single model step on a batch of data.
 
         :param batch: A batch containing input images and labels. Labels are not used by the model.
-        :return: A tuple containing the loss, predicted velocity, target velocity, and path samples.
+        :return: A tuple containing the loss, predicted velocity, target velocity, and path
+            samples.
         """
         data, _ = batch
         noise = torch.randn_like(data)

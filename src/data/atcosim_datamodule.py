@@ -1,7 +1,7 @@
+import wave
 from array import array
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-import wave
 
 import torch
 from lightning import LightningDataModule
@@ -40,9 +40,7 @@ class ATCOSIMDataset(Dataset[Dict[str, Any]]):
                 utterance_id, text = parts
                 audio_path = self.audio_dir / f"{utterance_id}.wav"
                 if not audio_path.is_file():
-                    raise FileNotFoundError(
-                        f"Audio for '{utterance_id}' not found: {audio_path}"
-                    )
+                    raise FileNotFoundError(f"Audio for '{utterance_id}' not found: {audio_path}")
                 samples.append((utterance_id, text, audio_path))
 
         if not samples:
@@ -210,5 +208,7 @@ class ATCOSIMDataModule(LightningDataModule):
 
     def predict_dataloader(self) -> DataLoader[Dict[str, Any]]:
         if self.data_test is None:
-            raise RuntimeError("Prediction dataset is not initialized. Call setup('predict') first.")
+            raise RuntimeError(
+                "Prediction dataset is not initialized. Call setup('predict') first."
+            )
         return self._dataloader(self.data_test, shuffle=False)

@@ -58,9 +58,7 @@ class VAELitModule(LightningModule):
         self.test_reconstruction_loss = MeanMetric()
         self.test_kl_loss = MeanMetric()
 
-    def forward(
-        self, x: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Perform a forward pass through the model `self.net`.
 
         :param x: A tensor of input images.
@@ -80,7 +78,8 @@ class VAELitModule(LightningModule):
         """Perform a single model step on a batch of data.
 
         :param batch: A batch containing input images and labels. Labels are not used by the VAE.
-        :return: A tuple containing the total loss, reconstruction loss, KL loss, and reconstruction.
+        :return: A tuple containing the total loss, reconstruction loss, KL loss, and
+            reconstruction.
         """
         x, _ = batch
         reconstruction, mu, logvar = self.forward(x)

@@ -90,9 +90,7 @@ class ScoreBasedLitModule(LightningModule):
             log(self.net.sigma_max) - log(self.net.sigma_min)
         )
         noise_levels = log_noise_levels.exp()
-        expanded_noise_levels = noise_levels.view(
-            noise_levels.size(0), *((1,) * (data.ndim - 1))
-        )
+        expanded_noise_levels = noise_levels.view(noise_levels.size(0), *((1,) * (data.ndim - 1)))
 
         noise = torch.randn_like(data)
         noisy_samples = self.net.perturb(data, noise_levels, noise)

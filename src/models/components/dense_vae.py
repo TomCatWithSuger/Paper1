@@ -76,9 +76,7 @@ class DenseVAE(nn.Module):
         """
         return self.decoder(z).view(z.size(0), *self.input_shape)
 
-    def forward(
-        self, x: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Perform a single forward pass through the variational autoencoder.
 
         :param x: The input tensor.

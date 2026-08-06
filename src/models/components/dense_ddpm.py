@@ -97,9 +97,7 @@ class DenseDDPM(nn.Module):
         self.register_buffer("alphas", alphas)
         self.register_buffer("alpha_cumprod", alpha_cumprod)
         self.register_buffer("sqrt_alpha_cumprod", torch.sqrt(alpha_cumprod))
-        self.register_buffer(
-            "sqrt_one_minus_alpha_cumprod", torch.sqrt(1.0 - alpha_cumprod)
-        )
+        self.register_buffer("sqrt_one_minus_alpha_cumprod", torch.sqrt(1.0 - alpha_cumprod))
         self.register_buffer("sqrt_reciprocal_alphas", torch.sqrt(1.0 / alphas))
         self.register_buffer(
             "posterior_variance",
@@ -157,8 +155,8 @@ class DenseDDPM(nn.Module):
 
         posterior_variance = self._extract(self.posterior_variance, timesteps)
         noise = torch.randn_like(x)
-        nonzero_mask = (timesteps != 0).float().view(
-            timesteps.size(0), *((1,) * len(self.input_shape))
+        nonzero_mask = (
+            (timesteps != 0).float().view(timesteps.size(0), *((1,) * len(self.input_shape)))
         )
         return model_mean + nonzero_mask * torch.sqrt(posterior_variance) * noise
 
@@ -172,9 +170,7 @@ class DenseDDPM(nn.Module):
         """
         samples = torch.randn(num_samples, *self.input_shape, device=device)
         for timestep in reversed(range(self.timesteps)):
-            timesteps = torch.full(
-                (num_samples,), timestep, device=device, dtype=torch.long
-            )
+            timesteps = torch.full((num_samples,), timestep, device=device, dtype=torch.long)
             samples = self.p_sample(samples, timesteps)
         return samples
 

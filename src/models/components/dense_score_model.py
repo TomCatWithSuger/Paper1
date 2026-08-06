@@ -99,15 +99,11 @@ class DenseScoreModel(nn.Module):
         layers.append(nn.Linear(in_features, self.input_size))
         self.score_predictor = nn.Sequential(*layers)
 
-        noise_levels = torch.exp(
-            torch.linspace(log(sigma_max), log(sigma_min), num_noise_levels)
-        )
+        noise_levels = torch.exp(torch.linspace(log(sigma_max), log(sigma_min), num_noise_levels))
         self.register_buffer("noise_levels", noise_levels)
 
     def _expand_noise_levels(self, noise_levels: torch.Tensor) -> torch.Tensor:
-        return noise_levels.view(
-            noise_levels.size(0), *((1,) * len(self.input_shape))
-        )
+        return noise_levels.view(noise_levels.size(0), *((1,) * len(self.input_shape)))
 
     def forward(self, x: torch.Tensor, noise_levels: torch.Tensor) -> torch.Tensor:
         """Predict the score of noisy samples.
@@ -164,9 +160,7 @@ class DenseScoreModel(nn.Module):
                 device=device,
                 dtype=samples.dtype,
             )
-            step_size = self.sampling_step_size * (
-                noise_level / self.sigma_min
-            ).pow(2)
+            step_size = self.sampling_step_size * (noise_level / self.sigma_min).pow(2)
             for _ in range(steps):
                 scores = self.forward(samples, noise_levels)
                 samples = samples + step_size * scores
