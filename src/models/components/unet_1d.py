@@ -25,6 +25,7 @@ class ConvBlock1D(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply the two-layer convolution block."""
         return self.block(x)
 
 
@@ -59,9 +60,7 @@ class UNet1D(nn.Module):
             self.pools.append(nn.MaxPool1d(kernel_size=2, stride=2))
             current_channels = channel
 
-        self.bottleneck = ConvBlock1D(
-            self.channels[-1], self.channels[-1] * 2, kernel_size
-        )
+        self.bottleneck = ConvBlock1D(self.channels[-1], self.channels[-1] * 2, kernel_size)
 
         self.upconvs = nn.ModuleList()
         self.decoders = nn.ModuleList()

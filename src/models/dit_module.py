@@ -28,6 +28,7 @@ class DiTLitModule(LightningModule):
         scheduler: Callable[..., LRSchedulerTypeUnion] | None,
         compile: bool = False,
     ) -> None:
+        """Initialize the diffusion transformer Lightning module."""
         super().__init__()
 
         self.save_hyperparameters(
@@ -45,12 +46,17 @@ class DiTLitModule(LightningModule):
         self.test_loss = MeanMetric()
 
     def forward(self, waveforms: torch.Tensor, times: torch.Tensor) -> torch.Tensor:
+        """Predict the velocity field for the given waveforms and times."""
         return self.net(waveforms, times)
 
     def on_train_start(self) -> None:
+        """Reset validation loss metric at the start of training."""
         self.val_loss.reset()
 
-    def model_step(self, batch: Mapping[str, Any]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    def model_step(
+        self, batch: Mapping[str, Any]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Perform a single denoising score matching step on a batch."""
         waveforms = batch["waveforms"].unsqueeze(-1)
         times = torch.rand(waveforms.size(0), device=waveforms.device, dtype=waveforms.dtype)
         noise = torch.randn_like(waveforms)
@@ -61,17 +67,20 @@ class DiTLitModule(LightningModule):
         return loss, predicted_velocity, target_velocity, path_samples
 
     def training_step(self, batch: Mapping[str, Any], batch_idx: int) -> torch.Tensor:
+        """Run one training step and log the loss."""
         loss, _, _, _ = self.model_step(batch)
         self.train_loss(loss)
         self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch: Mapping[str, Any], batch_idx: int) -> None:
+        """Run one validation step and log the loss."""
         loss, _, _, _ = self.model_step(batch)
         self.val_loss(loss)
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
 
     def test_step(self, batch: Mapping[str, Any], batch_idx: int) -> None:
+        """Run one test step and log the loss."""
         loss, _, _, _ = self.model_step(batch)
         self.test_loss(loss)
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
@@ -82,14 +91,17 @@ class DiTLitModule(LightningModule):
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> torch.Tensor:
+        """Predict the velocity field for a batch of waveforms."""
         _, predicted_velocity, _, _ = self.model_step(batch)
         return predicted_velocity
 
     def setup(self, stage: str) -> None:
+        """Optionally compile the network when fitting."""
         if self.compile_model and stage == "fit":
             self.net = cast(DiTNetwork, torch.compile(self.net))
 
     def configure_optimizers(self) -> OptimizerLRScheduler:
+        """Configure optimizer and optional learning rate scheduler."""
         optimizer = self.optimizer_factory(params=self.parameters())
         if self.scheduler_factory is not None:
             scheduler = self.scheduler_factory(optimizer=optimizer)

@@ -24,6 +24,7 @@ class UNetLitModule(LightningModule):
         scheduler: Callable[..., LRSchedulerTypeUnion] | None,
         compile: bool = False,
     ) -> None:
+        """Initialize the U-Net waveform reconstruction Lightning module."""
         super().__init__()
 
         self.save_hyperparameters(
@@ -41,14 +42,15 @@ class UNetLitModule(LightningModule):
         self.test_loss = MeanMetric()
 
     def forward(self, waveforms: torch.Tensor) -> torch.Tensor:
+        """Reconstruct waveforms through the U-Net."""
         return self.net(waveforms)
 
     def on_train_start(self) -> None:
+        """Reset validation loss metric at the start of training."""
         self.val_loss.reset()
 
-    def model_step(
-        self, batch: Mapping[str, Any]
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def model_step(self, batch: Mapping[str, Any]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Compute masked MSE reconstruction loss on a batch."""
         waveforms = cast(torch.Tensor, batch["waveforms"])
         attention_mask = cast(torch.Tensor, batch["attention_mask"])
         reconstruction = self.forward(waveforms)
@@ -59,17 +61,20 @@ class UNetLitModule(LightningModule):
         return loss, reconstruction
 
     def training_step(self, batch: Mapping[str, Any], batch_idx: int) -> torch.Tensor:
+        """Run one training step and log the reconstruction loss."""
         loss, _ = self.model_step(batch)
         self.train_loss(loss)
         self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch: Mapping[str, Any], batch_idx: int) -> None:
+        """Run one validation step and log the reconstruction loss."""
         loss, _ = self.model_step(batch)
         self.val_loss(loss)
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
 
     def test_step(self, batch: Mapping[str, Any], batch_idx: int) -> None:
+        """Run one test step and log the reconstruction loss."""
         loss, _ = self.model_step(batch)
         self.test_loss(loss)
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
@@ -80,14 +85,17 @@ class UNetLitModule(LightningModule):
         batch_idx: int,
         dataloader_idx: int = 0,
     ) -> torch.Tensor:
+        """Reconstruct waveforms for a batch of input data."""
         waveforms = cast(torch.Tensor, batch["waveforms"])
         return self.forward(waveforms)
 
     def setup(self, stage: str) -> None:
+        """Optionally compile the network when fitting."""
         if self.compile_model and stage == "fit":
             self.net = cast(UNetNetwork, torch.compile(self.net))
 
     def configure_optimizers(self) -> OptimizerLRScheduler:
+        """Configure optimizer and optional learning rate scheduler."""
         optimizer = self.optimizer_factory(params=self.parameters())
         if self.scheduler_factory is not None:
             scheduler = self.scheduler_factory(optimizer=optimizer)

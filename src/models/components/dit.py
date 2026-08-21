@@ -9,6 +9,7 @@ class TimestepEmbedding(nn.Module):
     """A sinusoidal embedding for continuous times."""
 
     def __init__(self, embedding_dim: int) -> None:
+        """Initialize the sinusoidal time embedding."""
         super().__init__()
 
         if embedding_dim < 2:
@@ -17,6 +18,7 @@ class TimestepEmbedding(nn.Module):
         self.embedding_dim = embedding_dim
 
     def forward(self, times: torch.Tensor) -> torch.Tensor:
+        """Compute sinusoidal embeddings for the given timesteps."""
         half_dim = self.embedding_dim // 2
         frequencies = torch.exp(
             log(10_000)
@@ -34,6 +36,7 @@ class TransformerBlock(nn.Module):
     """A pre-norm transformer block conditioned on an external embedding."""
 
     def __init__(self, embed_dim: int, num_heads: int, context_dim: int) -> None:
+        """Initialize the transformer block with cross-attention conditioning."""
         super().__init__()
 
         if embed_dim % num_heads != 0:
@@ -54,6 +57,7 @@ class TransformerBlock(nn.Module):
         self.condition_proj = nn.Linear(context_dim, embed_dim)
 
     def forward(self, x: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
+        """Apply cross-attention and feed-forward with external context conditioning."""
         context = self.condition_proj(context).unsqueeze(1)
         hidden = self.norm(x)
         hidden, _ = self.self_attention(query=hidden, key=context, value=context)
