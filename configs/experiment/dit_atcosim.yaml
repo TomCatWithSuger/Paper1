@@ -1,0 +1,21 @@
+# @package _global_
+
+defaults:
+  - override /data: atcosim
+  - override /model: dit
+  - override /callbacks: default
+  - override /trainer: default
+
+tags: ["atcosim", "dit", "voice-conversion-template"]
+
+seed: 12345
+
+data:
+  batch_size: 4
+
+trainer:
+  min_epochs: 1
+  max_epochs: 20
+
+model:
+  compile: false

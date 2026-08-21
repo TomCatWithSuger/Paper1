@@ -1,0 +1,23 @@
+_target_: src.models.dit_module.DiTLitModule
+
+optimizer:
+  _target_: torch.optim.AdamW
+  _partial_: true
+  lr: 0.0002
+  weight_decay: 0.0
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+  _partial_: true
+  T_max: 100
+
+net:
+  _target_: src.models.components.dit.DiT1D
+  in_channels: 1
+  hidden_dim: 256
+  context_dim: 64
+  num_layers: 4
+  num_heads: 8
+  integration_steps: 100
+
+compile: false
