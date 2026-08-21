@@ -63,11 +63,15 @@ def test_train_epoch_double_val_loop(cfg_train: DictConfig) -> None:
 
 
 @pytest.mark.slow
-def test_train_ddp_sim(cfg_train: DictConfig) -> None:
+def test_train_ddp_sim(cfg_train: DictConfig, monkeypatch: pytest.MonkeyPatch) -> None:
     """Simulate DDP (Distributed Data Parallel) on 2 CPU processes.
 
     :param cfg_train: A DictConfig containing a valid training configuration.
+    :param monkeypatch: The pytest fixture used to limit native CPU threads.
     """
+    monkeypatch.setenv("OMP_NUM_THREADS", "1")
+    monkeypatch.setenv("MKL_NUM_THREADS", "1")
+
     HydraConfig().set_config(cfg_train)
     with open_dict(cfg_train):
         cfg_train.trainer.max_epochs = 2

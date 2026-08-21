@@ -40,10 +40,9 @@ def test_mnist_datamodule(batch_size: int) -> None:
 
 
 @pytest.mark.parametrize("batch_size", [2, 4])
-def test_atcosim_datamodule(batch_size: int) -> None:
-    data_dir = "/media/B8BE-8B5F/Tom/data/ATCOSIM"
-
-    dm = ATCOSIMDataModule(data_dir=data_dir, batch_size=batch_size)
+def test_atcosim_datamodule(batch_size: int, atcosim_data_dir: Path) -> None:
+    """Test ATCOSIM loading and collation without external dataset dependencies."""
+    dm = ATCOSIMDataModule(data_dir=str(atcosim_data_dir), batch_size=batch_size)
 
     dm.prepare_data()
     dm.setup()
@@ -51,9 +50,9 @@ def test_atcosim_datamodule(batch_size: int) -> None:
     assert dm.data_train is not None
     assert dm.data_val is not None
     assert dm.data_test is not None
-    assert len(dm.data_train) == 5_745
-    assert len(dm.data_val) == 1_436
-    assert len(dm.data_test) == 1_760
+    assert len(dm.data_train) >= batch_size
+    assert len(dm.data_val) > 0
+    assert len(dm.data_test) > 0
 
     batch = next(iter(dm.train_dataloader()))
     assert batch["waveforms"].shape[0] == batch_size

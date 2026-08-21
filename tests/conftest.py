@@ -1,5 +1,8 @@
 """This file prepares config fixtures for other tests."""
 
+import os
+import wave
+from array import array
 from collections.abc import Generator
 from pathlib import Path
 
@@ -8,6 +11,65 @@ import rootutils
 from hydra import compose, initialize
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import DictConfig, open_dict
+
+rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
+
+
+@pytest.fixture()
+def atcosim_data_dir(tmp_path: Path) -> Path:
+    """Use local ATCOSIM data when available, otherwise create a minimal dataset."""
+    local_data_dir_value = os.environ.get("ATCOSIM_DATA_DIR")
+    if local_data_dir_value:
+        local_data_dir = Path(local_data_dir_value).expanduser()
+        required_paths = (
+            local_data_dir / "train",
+            local_data_dir / "test",
+            local_data_dir / "transcriptions" / "train_trans.txt",
+            local_data_dir / "transcriptions" / "test_trans.txt",
+            local_data_dir / "transcriptions" / "fold0" / "train_trans.txt",
+            local_data_dir / "transcriptions" / "fold0" / "val_trans.txt",
+        )
+        if all(path.exists() for path in required_paths):
+            return local_data_dir
+
+    data_dir = tmp_path / "ATCOSIM"
+    train_dir = data_dir / "train"
+    test_dir = data_dir / "test"
+    fold_dir = data_dir / "transcriptions" / "fold0"
+    train_dir.mkdir(parents=True)
+    test_dir.mkdir(parents=True)
+    fold_dir.mkdir(parents=True)
+
+    def write_wav(path: Path, length: int) -> None:
+        samples = array("h", (index % 100 for index in range(length)))
+        with wave.open(str(path), "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(32_000)
+            wav_file.writeframes(samples.tobytes())
+
+    train_ids = [f"train_{index}" for index in range(4)]
+    val_ids = [f"val_{index}" for index in range(2)]
+    test_ids = [f"test_{index}" for index in range(2)]
+    for index, utterance_id in enumerate(train_ids + val_ids):
+        write_wav(train_dir / f"{utterance_id}.wav", 160 + index)
+    for index, utterance_id in enumerate(test_ids):
+        write_wav(test_dir / f"{utterance_id}.wav", 180 + index)
+
+    transcriptions = data_dir / "transcriptions"
+    (transcriptions / "train_trans.txt").write_text(
+        "".join(f"{item} train text\n" for item in train_ids + val_ids), encoding="utf-8"
+    )
+    (transcriptions / "test_trans.txt").write_text(
+        "".join(f"{item} test text\n" for item in test_ids), encoding="utf-8"
+    )
+    (fold_dir / "train_trans.txt").write_text(
+        "".join(f"{item} train text\n" for item in train_ids), encoding="utf-8"
+    )
+    (fold_dir / "val_trans.txt").write_text(
+        "".join(f"{item} validation text\n" for item in val_ids), encoding="utf-8"
+    )
+    return data_dir
 
 
 @pytest.fixture(scope="package")

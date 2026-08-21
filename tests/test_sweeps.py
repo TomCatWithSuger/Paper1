@@ -16,10 +16,19 @@ def test_experiments(tmp_path: Path) -> None:
 
     :param tmp_path: The temporary logging path.
     """
+    experiment_dir = Path("configs/experiment")
+    experiment_names = [
+        path.stem
+        for path in experiment_dir.glob("*.yaml")
+        if "override /data: atcosim" not in path.read_text(encoding="utf-8")
+    ]
+    if not experiment_names:
+        pytest.skip("No self-contained experiment configs are available")
+
     command = [
         startfile,
         "-m",
-        "experiment=glob(*)",
+        "experiment=" + ",".join(experiment_names),
         "hydra.sweep.dir=" + str(tmp_path),
         "++trainer.fast_dev_run=true",
     ] + overrides
