@@ -20,5 +20,6 @@ hydra-optuna-sweeper==1.2.0
 rootutils       # standardizing the project root setup
 pre-commit      # hooks for applying linters on commit
 rich            # beautiful text formatting in terminal
+soundfile       # reading VCTK FLAC and WAV audio
 pytest          # tests
 # sh            # for running bash commands in some tests (linux/macos only)

@@ -69,7 +69,7 @@ def test_atcosim_datamodule(batch_size: int, atcosim_data_dir: Path) -> None:
 
 @pytest.mark.parametrize("batch_size", [2, 4])
 def test_vctk_datamodule(batch_size: int, vctk_data_dir: Path) -> None:
-    """Test VCTK speaker splits, audio loading, and collation."""
+    """Test VCTK pairing, preprocessing, speaker splits, and collation."""
     dm = VCTKDataModule(
         data_dir=str(vctk_data_dir),
         val_ratio=0.2,
@@ -98,7 +98,29 @@ def test_vctk_datamodule(batch_size: int, vctk_data_dir: Path) -> None:
     assert batch["lengths"].dtype == torch.int64
     assert batch["attention_mask"].shape == batch["waveforms"].shape
     assert batch["attention_mask"].dtype == torch.bool
-    assert batch["sample_rate"] == 48_000
+    assert batch["sample_rate"] == 22_050
     assert len(batch["ids"]) == batch_size
     assert len(batch["speaker_ids"]) == batch_size
     assert len(batch["texts"]) == batch_size
+    assert len(batch["reference_ids"]) == batch_size
+    assert all(
+        utterance_id != reference_id
+        for utterance_id, reference_id in zip(batch["ids"], batch["reference_ids"])
+    )
+    assert batch["reference_waveforms"].shape[0] == batch_size
+    assert batch["reference_lengths"].shape == (batch_size,)
+    assert batch["reference_attention_mask"].shape == batch["reference_waveforms"].shape
+    assert batch["mel_spectrograms"].shape[:2] == (batch_size, 80)
+    assert batch["reference_mel_spectrograms"].shape[:2] == (batch_size, 80)
+    assert batch["mel_lengths"].shape == (batch_size,)
+    assert batch["reference_mel_lengths"].shape == (batch_size,)
+    assert batch["mel_attention_mask"].shape == (
+        batch_size,
+        batch["mel_spectrograms"].shape[2],
+    )
+    assert batch["reference_mel_attention_mask"].shape == (
+        batch_size,
+        batch["reference_mel_spectrograms"].shape[2],
+    )
+    assert torch.isfinite(batch["mel_spectrograms"]).all()
+    assert torch.isfinite(batch["reference_mel_spectrograms"]).all()
