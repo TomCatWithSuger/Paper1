@@ -72,6 +72,40 @@ def atcosim_data_dir(tmp_path: Path) -> Path:
     return data_dir
 
 
+@pytest.fixture()
+def vctk_data_dir(tmp_path: Path) -> Path:
+    """Use local VCTK data when available, otherwise create a minimal dataset."""
+    local_data_dir_value = os.environ.get("VCTK_DATA_DIR")
+    if local_data_dir_value:
+        local_data_dir = Path(local_data_dir_value).expanduser()
+        required_paths = (
+            local_data_dir / "txt",
+            local_data_dir / "wav48_silence_trimmed",
+        )
+        if all(path.is_dir() for path in required_paths):
+            return local_data_dir
+
+    data_dir = tmp_path / "VCTK"
+    for speaker_index in range(6):
+        speaker_id = f"p{225 + speaker_index}"
+        transcript_dir = data_dir / "txt" / speaker_id
+        audio_dir = data_dir / "wav48_silence_trimmed" / speaker_id
+        transcript_dir.mkdir(parents=True)
+        audio_dir.mkdir(parents=True)
+        for utterance_index in range(2):
+            utterance_id = f"{speaker_id}_{utterance_index + 1:03d}"
+            (transcript_dir / f"{utterance_id}.txt").write_text(
+                f"Synthetic speech from {speaker_id}.\n", encoding="utf-8"
+            )
+            samples = array("h", (index % 100 for index in range(240 + utterance_index)))
+            with wave.open(str(audio_dir / f"{utterance_id}_mic1.wav"), "wb") as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(48_000)
+                wav_file.writeframes(samples.tobytes())
+    return data_dir
+
+
 @pytest.fixture(scope="package")
 def cfg_train_global() -> DictConfig:
     """A pytest fixture for setting up a default Hydra DictConfig for training.

@@ -28,7 +28,9 @@ dependencies:
   - lightning=2.*
   - torchmetrics=0.*
   - hydra-core=1.*
+  - numpy=2.2.6
   - rich=13.*
+  - pysoundfile=0.13.1
   - pre-commit=3.*
   - pytest=7.*
   - setuptools<82

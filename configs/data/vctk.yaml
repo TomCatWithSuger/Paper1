@@ -1,0 +1,8 @@
+_target_: src.data.vctk_datamodule.VCTKDataModule
+data_dir: ${oc.env:VCTK_DATA_DIR}
+microphone: mic1
+val_ratio: 0.1
+test_ratio: 0.1
+batch_size: 16
+num_workers: 0
+pin_memory: False
