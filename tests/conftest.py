@@ -92,7 +92,7 @@ def vctk_data_dir(tmp_path: Path) -> Path:
         audio_dir = data_dir / "wav48_silence_trimmed" / speaker_id
         transcript_dir.mkdir(parents=True)
         audio_dir.mkdir(parents=True)
-        for utterance_index in range(2):
+        for utterance_index in range(6):
             utterance_id = f"{speaker_id}_{utterance_index + 1:03d}"
             (transcript_dir / f"{utterance_id}.txt").write_text(
                 f"Synthetic speech from {speaker_id}.\n", encoding="utf-8"

@@ -1,10 +1,12 @@
+defaults:
+  - vctk_split: ratio
+  - _self_
+
 _target_: src.data.vctk_datamodule.VCTKDataModule
-data_dir: ${oc.env:VCTK_DATA_DIR}
+data_dir: ${paths.vctk_data_dir}
 microphone: mic1
-val_ratio: 0.1
-test_ratio: 0.1
 sample_rate: 22050
-max_duration_seconds: 20.0
+max_duration_seconds: 10.0
 n_fft: 1024
 win_length: 1024
 hop_length: 256
@@ -12,6 +14,8 @@ n_mels: 80
 f_min: 0.0
 f_max: 8000.0
 log_mel_floor: 1.0e-5
+feature_cache_dir: ${paths.meanvc_feature_cache_dir}
+require_feature_cache: true
 batch_size: 16
 num_workers: 0
 pin_memory: False

@@ -4,6 +4,11 @@ import pytest
 import torch
 
 from src.data.atcosim_datamodule import ATCOSIMDataModule
+from src.data.components.vctk_splits import (
+    RatioSpeakerSplit,
+    UnseenSpeakerSentenceSplit,
+    discover_vctk_samples,
+)
 from src.data.mnist_datamodule import MNISTDataModule
 from src.data.vctk_datamodule import VCTKDataModule
 
@@ -72,8 +77,7 @@ def test_vctk_datamodule(batch_size: int, vctk_data_dir: Path) -> None:
     """Test VCTK pairing, preprocessing, speaker splits, and collation."""
     dm = VCTKDataModule(
         data_dir=str(vctk_data_dir),
-        val_ratio=0.2,
-        test_ratio=0.2,
+        split_strategy=RatioSpeakerSplit(val_ratio=0.2, test_ratio=0.2),
         batch_size=batch_size,
     )
 
@@ -107,20 +111,80 @@ def test_vctk_datamodule(batch_size: int, vctk_data_dir: Path) -> None:
         utterance_id != reference_id
         for utterance_id, reference_id in zip(batch["ids"], batch["reference_ids"])
     )
-    assert batch["reference_waveforms"].shape[0] == batch_size
-    assert batch["reference_lengths"].shape == (batch_size,)
-    assert batch["reference_attention_mask"].shape == batch["reference_waveforms"].shape
     assert batch["mel_spectrograms"].shape[:2] == (batch_size, 80)
-    assert batch["reference_mel_spectrograms"].shape[:2] == (batch_size, 80)
     assert batch["mel_lengths"].shape == (batch_size,)
-    assert batch["reference_mel_lengths"].shape == (batch_size,)
     assert batch["mel_attention_mask"].shape == (
         batch_size,
         batch["mel_spectrograms"].shape[2],
     )
-    assert batch["reference_mel_attention_mask"].shape == (
-        batch_size,
-        batch["reference_mel_spectrograms"].shape[2],
-    )
     assert torch.isfinite(batch["mel_spectrograms"]).all()
-    assert torch.isfinite(batch["reference_mel_spectrograms"]).all()
+    assert dm.data_train.max_samples == 10 * 22_050
+    assert "reference_waveforms" not in batch
+    assert "reference_mel_spectrograms" not in batch
+
+
+def test_vctk_unseen_speaker_sentence_split(vctk_data_dir: Path) -> None:
+    evaluation_speakers = {"p229", "p230"}
+    evaluation_sentences = {"001", "002"}
+    dm = VCTKDataModule(
+        data_dir=str(vctk_data_dir),
+        split_strategy=UnseenSpeakerSentenceSplit(
+            evaluation_speaker_ids=sorted(evaluation_speakers),
+            evaluation_sentence_ids=sorted(evaluation_sentences),
+            val_ratio=0.5,
+        ),
+        test_reference_mode="different_speaker",
+        batch_size=2,
+    )
+
+    dm.prepare_data()
+    dm.setup()
+
+    assert dm.data_train is not None
+    assert dm.data_val is not None
+    assert dm.data_test is not None
+    train_speakers = set(dm.data_train.speaker_ids)
+    val_speakers = set(dm.data_val.speaker_ids)
+    test_speakers = set(dm.data_test.speaker_ids)
+    assert train_speakers == val_speakers
+    assert train_speakers.isdisjoint(evaluation_speakers)
+    assert test_speakers == evaluation_speakers
+    assert all(sample.sentence_id not in evaluation_sentences for sample in dm.data_train.samples)
+    assert all(sample.sentence_id not in evaluation_sentences for sample in dm.data_val.samples)
+    assert all(sample.sentence_id in evaluation_sentences for sample in dm.data_test.samples)
+
+    batch = next(iter(dm.test_dataloader()))
+    assert all(
+        speaker_id != reference_speaker_id
+        for speaker_id, reference_speaker_id in zip(
+            batch["speaker_ids"], batch["reference_speaker_ids"]
+        )
+    )
+
+
+def test_vctk_cached_meanvc_features(vctk_data_dir: Path, tmp_path: Path) -> None:
+    """测试离线内容特征、目标说话人向量和参考说话人向量的批处理。"""
+    cache_dir = tmp_path / "meanvc_features"
+    for sample in discover_vctk_samples(vctk_data_dir, "mic1"):
+        content_path = cache_dir / "content" / f"{sample.utterance_id}.pt"
+        speaker_path = cache_dir / "speaker" / f"{sample.utterance_id}.pt"
+        content_path.parent.mkdir(parents=True, exist_ok=True)
+        speaker_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(torch.randn(256, 20), content_path)
+        torch.save(torch.randn(256), speaker_path)
+
+    dm = VCTKDataModule(
+        data_dir=str(vctk_data_dir),
+        split_strategy=RatioSpeakerSplit(val_ratio=0.2, test_ratio=0.2),
+        feature_cache_dir=str(cache_dir),
+        require_feature_cache=True,
+        batch_size=2,
+    )
+    dm.prepare_data()
+    dm.setup()
+
+    batch = next(iter(dm.train_dataloader()))
+    assert batch["content_features"].shape == (2, 256, 20)
+    assert batch["content_feature_lengths"].tolist() == [20, 20]
+    assert batch["speaker_features"].shape == (2, 256)
+    assert batch["reference_speaker_features"].shape == (2, 256)

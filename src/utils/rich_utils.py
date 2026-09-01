@@ -29,20 +29,19 @@ def print_config_tree(
     resolve: bool = False,
     save_to_file: bool = False,
 ) -> None:
-    """Prints the contents of a DictConfig as a tree structure using the Rich library.
+    """使用 Rich 以树形结构打印 Hydra 配置。
 
-    :param cfg: A DictConfig composed by Hydra.
-    :param print_order: Determines in what order config components are printed. Default is ``("data", "model",
-    "callbacks", "logger", "trainer", "paths", "extras")``.
-    :param resolve: Whether to resolve reference fields of DictConfig. Default is ``False``.
-    :param save_to_file: Whether to export config to the hydra output folder. Default is ``False``.
+    :param cfg: Hydra 生成的配置树。
+    :param print_order: 各配置分组的打印顺序。
+    :param resolve: 是否解析配置中的插值引用。
+    :param save_to_file: 是否将配置树保存到 Hydra 输出目录。
     """
     style = "dim"
     tree = rich.tree.Tree("CONFIG", style=style, guide_style=style)
 
     queue = []
 
-    # add fields from `print_order` to queue
+    # 按指定顺序加入已存在的配置分组。
     for field in print_order:
         (
             queue.append(field)
@@ -52,12 +51,12 @@ def print_config_tree(
             )
         )
 
-    # add all the other fields to queue (not specified in `print_order`)
+    # 将未指定顺序的其余配置分组追加到队列。
     for field in cfg:
         if field not in queue:
             queue.append(field)
 
-    # generate config tree from queue
+    # 依次生成配置树分支。
     for field in queue:
         branch = tree.add(field, style=style, guide_style=style)
 
@@ -69,10 +68,10 @@ def print_config_tree(
 
         branch.add(rich.syntax.Syntax(branch_content, "yaml"))
 
-    # print config tree
+    # 在终端输出配置树。
     rich.print(tree)
 
-    # save config tree to file
+    # 按需将配置树保存到文件。
     if save_to_file:
         with open(Path(cfg.paths.output_dir, "config_tree.log"), "w") as file:
             rich.print(tree, file=file)
@@ -80,10 +79,10 @@ def print_config_tree(
 
 @rank_zero_only
 def enforce_tags(cfg: DictConfig, save_to_file: bool = False) -> None:
-    """Prompts user to input tags from command line if no tags are provided in config.
+    """配置未提供标签时提示用户输入实验标签。
 
-    :param cfg: A DictConfig composed by Hydra.
-    :param save_to_file: Whether to export tags to the hydra output folder. Default is ``False``.
+    :param cfg: Hydra 生成的配置树。
+    :param save_to_file: 是否将标签保存到 Hydra 输出目录。
     """
     if not cfg.get("tags"):
         if "id" in HydraConfig().cfg.hydra.job:

@@ -1,6 +1,7 @@
 # --------- pytorch --------- #
 torch>=2.0.0
 torchvision>=0.15.0
+torchaudio==2.5.1
 lightning>=2.0.0
 torchmetrics>=0.11.4
 
@@ -21,5 +22,8 @@ rootutils       # standardizing the project root setup
 pre-commit      # hooks for applying linters on commit
 rich            # beautiful text formatting in terminal
 soundfile       # reading VCTK FLAC and WAV audio
+s3prl==0.4.18   # MeanVC WavLM speaker encoder
+gdown           # MeanVC speaker checkpoint download
+requests        # verified HTTPS model downloads
 pytest          # tests
 # sh            # for running bash commands in some tests (linux/macos only)

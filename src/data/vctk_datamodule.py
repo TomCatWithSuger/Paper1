@@ -1,7 +1,7 @@
 """VCTK dataset and Lightning data module."""
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 
 import soundfile as sf
 import torch
@@ -10,64 +10,67 @@ from lightning import LightningDataModule
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
 
+from src.data.components.vctk_splits import (
+    RatioSpeakerSplit,
+    VCTKSample,
+    VCTKSplitStrategy,
+    discover_vctk_samples,
+)
+
 
 class VCTKDataset(Dataset[Dict[str, Any]]):
-    """Speaker-aware VCTK dataset with same-speaker reference utterances."""
+    """Speaker-aware VCTK dataset with configurable reference pairing."""
 
     def __init__(
         self,
-        data_dir: str | Path,
-        speaker_ids: Sequence[str],
-        microphone: str,
+        samples: Sequence[VCTKSample],
         sample_rate: int,
         max_duration_seconds: float,
         randomize: bool,
+        reference_mode: Literal["same_speaker", "different_speaker"] = "same_speaker",
+        feature_cache_dir: Path | None = None,
     ) -> None:
-        self.data_dir = Path(data_dir).expanduser().resolve()
-        self.speaker_ids = list(speaker_ids)
-        self.microphone = microphone
+        if reference_mode not in {"same_speaker", "different_speaker"}:
+            raise ValueError(f"Unsupported reference mode: {reference_mode}")
+        self.samples = list(samples)
+        self.speaker_ids = sorted({sample.speaker_id for sample in samples})
         self.sample_rate = sample_rate
         self.max_samples = round(sample_rate * max_duration_seconds)
         self.randomize = randomize
-        self.samples = self._find_samples()
+        self.reference_mode = reference_mode
+        self.feature_cache_dir = feature_cache_dir
         self.speaker_sample_indices = self._group_sample_indices()
-
-    def _find_samples(self) -> List[Tuple[str, str, str, Path]]:
-        samples: List[Tuple[str, str, str, Path]] = []
-        for speaker_id in self.speaker_ids:
-            transcript_dir = self.data_dir / "txt" / speaker_id
-            audio_dir = self.data_dir / "wav48_silence_trimmed" / speaker_id
-            for transcript_path in sorted(transcript_dir.glob("*.txt")):
-                utterance_id = transcript_path.stem
-                audio_path = audio_dir / f"{utterance_id}_{self.microphone}.flac"
-                if not audio_path.is_file():
-                    audio_path = audio_dir / f"{utterance_id}_{self.microphone}.wav"
-                if not audio_path.is_file():
-                    continue
-                text = transcript_path.read_text(encoding="utf-8").strip()
-                if text:
-                    samples.append((utterance_id, speaker_id, text, audio_path))
-
-        if not samples:
-            raise ValueError(f"No VCTK samples found for speakers: {self.speaker_ids}")
-        return samples
 
     def _group_sample_indices(self) -> Dict[str, List[int]]:
         grouped: Dict[str, List[int]] = {speaker_id: [] for speaker_id in self.speaker_ids}
-        for index, (_, speaker_id, _, _) in enumerate(self.samples):
-            grouped[speaker_id].append(index)
+        for index, sample in enumerate(self.samples):
+            grouped[sample.speaker_id].append(index)
 
-        speakers_without_references = [
-            speaker_id for speaker_id, indices in grouped.items() if len(indices) < 2
-        ]
+        if self.reference_mode == "same_speaker":
+            speakers_without_references = [
+                speaker_id for speaker_id, indices in grouped.items() if len(indices) < 2
+            ]
+        else:
+            speakers_without_references = [] if len(grouped) >= 2 else self.speaker_ids
         if speakers_without_references:
             raise ValueError(
-                "Each VCTK speaker requires at least two utterances: "
+                "VCTK reference pairing is unavailable for speakers: "
                 + ", ".join(speakers_without_references)
             )
         return grouped
 
     def _reference_index(self, index: int, speaker_id: str) -> int:
+        if self.reference_mode == "different_speaker":
+            indices = [
+                candidate_index
+                for candidate_speaker, candidate_indices in self.speaker_sample_indices.items()
+                if candidate_speaker != speaker_id
+                for candidate_index in candidate_indices
+            ]
+            if self.randomize:
+                return indices[int(torch.randint(len(indices), ()).item())]
+            return indices[index % len(indices)]
+
         indices = self.speaker_sample_indices[speaker_id]
         position = indices.index(index)
         if self.randomize:
@@ -75,8 +78,13 @@ class VCTKDataset(Dataset[Dict[str, Any]]):
             return indices[(position + offset) % len(indices)]
         return indices[(position + 1) % len(indices)]
 
-    def _load_audio(self, audio_path: Path) -> torch.Tensor:
-        audio, original_sample_rate = sf.read(audio_path, dtype="float32", always_2d=True)
+    def _load_audio(self, audio_path: Path) -> Tuple[torch.Tensor, int, int]:
+        result: tuple[Any, int] = sf.read(
+            audio_path,
+            dtype="float32",
+            always_2d=True,
+        )
+        audio, original_sample_rate = result
         waveform = torch.from_numpy(audio).mean(dim=1)
         if original_sample_rate != self.sample_rate:
             output_length = round(waveform.numel() * self.sample_rate / original_sample_rate)
@@ -88,36 +96,83 @@ class VCTKDataset(Dataset[Dict[str, Any]]):
             )
             waveform = waveform.view(-1)
 
-        if waveform.numel() > self.max_samples:
+        total_samples = waveform.numel()
+        start = 0
+        if total_samples > self.max_samples:
             if self.randomize:
-                max_start = waveform.numel() - self.max_samples
+                max_start = total_samples - self.max_samples
                 start = int(torch.randint(max_start + 1, ()).item())
-            else:
-                start = 0
             waveform = waveform[start : start + self.max_samples]
-        return waveform.contiguous()
+        return waveform.contiguous(), start, total_samples
+
+    def _load_content_features(
+        self,
+        utterance_id: str,
+        crop_start: int,
+        crop_samples: int,
+        total_samples: int,
+    ) -> torch.Tensor:
+        if self.feature_cache_dir is None:
+            raise RuntimeError("feature cache directory is not configured")
+        path = self.feature_cache_dir / "content" / f"{utterance_id}.pt"
+        if not path.is_file():
+            raise FileNotFoundError(f"cached content feature not found: {path}")
+        features = torch.load(path, map_location="cpu", weights_only=True)
+        if not isinstance(features, torch.Tensor) or features.ndim != 2:
+            raise ValueError(f"invalid cached content feature: {path}")
+        start_frame = round(crop_start * features.size(1) / total_samples)
+        end_frame = round((crop_start + crop_samples) * features.size(1) / total_samples)
+        end_frame = max(start_frame + 1, min(end_frame, features.size(1)))
+        return features[:, start_frame:end_frame].float().contiguous()
+
+    def _load_speaker_features(self, utterance_id: str) -> torch.Tensor:
+        if self.feature_cache_dir is None:
+            raise RuntimeError("feature cache directory is not configured")
+        path = self.feature_cache_dir / "speaker" / f"{utterance_id}.pt"
+        if not path.is_file():
+            raise FileNotFoundError(f"cached speaker feature not found: {path}")
+        features = torch.load(path, map_location="cpu", weights_only=True)
+        if not isinstance(features, torch.Tensor) or features.ndim != 1:
+            raise ValueError(f"invalid cached speaker feature: {path}")
+        return features.float().contiguous()
 
     def __len__(self) -> int:
         return len(self.samples)
 
     def __getitem__(self, index: int) -> Dict[str, Any]:
-        utterance_id, speaker_id, text, audio_path = self.samples[index]
-        reference_index = self._reference_index(index, speaker_id)
-        reference_id, _, reference_text, reference_audio_path = self.samples[reference_index]
-        waveform = self._load_audio(audio_path)
-        reference_waveform = self._load_audio(reference_audio_path)
-        return {
-            "id": utterance_id,
-            "speaker_id": speaker_id,
-            "text": text,
+        sample = self.samples[index]
+        reference_index = self._reference_index(index, sample.speaker_id)
+        reference = self.samples[reference_index]
+        waveform, crop_start, total_samples = self._load_audio(sample.audio_path)
+        item = {
+            "id": sample.utterance_id,
+            "sentence_id": sample.sentence_id,
+            "speaker_id": sample.speaker_id,
+            "text": sample.text,
             "waveform": waveform,
-            "reference_id": reference_id,
-            "reference_text": reference_text,
-            "reference_waveform": reference_waveform,
+            "reference_id": reference.utterance_id,
+            "reference_sentence_id": reference.sentence_id,
+            "reference_speaker_id": reference.speaker_id,
+            "reference_text": reference.text,
             "sample_rate": self.sample_rate,
-            "audio_path": str(audio_path),
-            "reference_audio_path": str(reference_audio_path),
+            "audio_path": str(sample.audio_path),
         }
+        if self.feature_cache_dir is not None:
+            item.update(
+                {
+                    "content_features": self._load_content_features(
+                        sample.utterance_id,
+                        crop_start,
+                        waveform.numel(),
+                        total_samples,
+                    ),
+                    "speaker_features": self._load_speaker_features(sample.utterance_id),
+                    "reference_speaker_features": self._load_speaker_features(
+                        reference.utterance_id
+                    ),
+                }
+            )
+        return item
 
 
 class VCTKCollator:
@@ -207,6 +262,14 @@ class VCTKCollator:
         mask = torch.arange(padded.size(2)).unsqueeze(0) < lengths.unsqueeze(1)
         return padded, lengths, mask
 
+    @staticmethod
+    def _pad_content_features(
+        features: List[torch.Tensor],
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        lengths = torch.tensor([feature.size(1) for feature in features], dtype=torch.long)
+        padded = pad_sequence([feature.transpose(0, 1) for feature in features], batch_first=True)
+        return padded.transpose(1, 2), lengths
+
     def __call__(self, samples: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not samples:
             raise ValueError("Cannot collate an empty batch")
@@ -216,21 +279,14 @@ class VCTKCollator:
             raise ValueError(f"Mixed sample rates in one batch: {sorted(sample_rates)}")
 
         waveforms = [sample["waveform"] for sample in samples]
-        references = [sample["reference_waveform"] for sample in samples]
         mels = [self._log_mel(waveform) for waveform in waveforms]
-        reference_mels = [self._log_mel(waveform) for waveform in references]
 
         padded_waveforms, lengths, attention_mask = self._pad_waveforms(waveforms)
-        padded_references, reference_lengths, reference_attention_mask = self._pad_waveforms(
-            references
-        )
         padded_mels, mel_lengths, mel_attention_mask = self._pad_mels(mels)
-        padded_reference_mels, reference_mel_lengths, reference_mel_attention_mask = (
-            self._pad_mels(reference_mels)
-        )
 
-        return {
+        batch = {
             "ids": [sample["id"] for sample in samples],
+            "sentence_ids": [sample["sentence_id"] for sample in samples],
             "speaker_ids": [sample["speaker_id"] for sample in samples],
             "texts": [sample["text"] for sample in samples],
             "waveforms": padded_waveforms,
@@ -240,30 +296,45 @@ class VCTKCollator:
             "mel_lengths": mel_lengths,
             "mel_attention_mask": mel_attention_mask,
             "reference_ids": [sample["reference_id"] for sample in samples],
+            "reference_sentence_ids": [sample["reference_sentence_id"] for sample in samples],
+            "reference_speaker_ids": [sample["reference_speaker_id"] for sample in samples],
             "reference_texts": [sample["reference_text"] for sample in samples],
-            "reference_waveforms": padded_references,
-            "reference_lengths": reference_lengths,
-            "reference_attention_mask": reference_attention_mask,
-            "reference_mel_spectrograms": padded_reference_mels,
-            "reference_mel_lengths": reference_mel_lengths,
-            "reference_mel_attention_mask": reference_mel_attention_mask,
             "sample_rate": sample_rates.pop(),
             "audio_paths": [sample["audio_path"] for sample in samples],
-            "reference_audio_paths": [sample["reference_audio_path"] for sample in samples],
         }
+        cached_samples = ["content_features" in sample for sample in samples]
+        if any(cached_samples) and not all(cached_samples):
+            raise ValueError("mixed cached and uncached VCTK samples in one batch")
+        if all(cached_samples):
+            content_features, content_feature_lengths = self._pad_content_features(
+                [sample["content_features"] for sample in samples]
+            )
+            batch.update(
+                {
+                    "content_features": content_features,
+                    "content_feature_lengths": content_feature_lengths,
+                    "speaker_features": torch.stack(
+                        [sample["speaker_features"] for sample in samples]
+                    ),
+                    "reference_speaker_features": torch.stack(
+                        [sample["reference_speaker_features"] for sample in samples]
+                    ),
+                }
+            )
+        return batch
 
 
 class VCTKDataModule(LightningDataModule):
-    """Lightning data module using deterministic speaker-disjoint VCTK splits."""
+    """Lightning data module using a configurable VCTK split strategy."""
 
     def __init__(
         self,
         data_dir: str,
         microphone: str = "mic1",
-        val_ratio: float = 0.1,
-        test_ratio: float = 0.1,
+        split_strategy: Optional[VCTKSplitStrategy] = None,
+        test_reference_mode: Literal["same_speaker", "different_speaker"] = "same_speaker",
         sample_rate: int = 22_050,
-        max_duration_seconds: float = 20.0,
+        max_duration_seconds: float = 10.0,
         n_fft: int = 1024,
         win_length: int = 1024,
         hop_length: int = 256,
@@ -271,6 +342,8 @@ class VCTKDataModule(LightningDataModule):
         f_min: float = 0.0,
         f_max: float = 8_000.0,
         log_mel_floor: float = 1e-5,
+        feature_cache_dir: str | None = None,
+        require_feature_cache: bool = False,
         batch_size: int = 16,
         num_workers: int = 0,
         pin_memory: bool = False,
@@ -278,8 +351,8 @@ class VCTKDataModule(LightningDataModule):
         super().__init__()
         if microphone not in {"mic1", "mic2"}:
             raise ValueError(f"microphone must be 'mic1' or 'mic2', got {microphone}")
-        if not 0 < val_ratio < 1 or not 0 < test_ratio < 1 or val_ratio + test_ratio >= 1:
-            raise ValueError("val_ratio and test_ratio must be positive and sum to less than 1")
+        if test_reference_mode not in {"same_speaker", "different_speaker"}:
+            raise ValueError(f"Unsupported test reference mode: {test_reference_mode}")
         if sample_rate <= 0 or max_duration_seconds <= 0:
             raise ValueError("sample_rate and max_duration_seconds must be positive")
         if n_fft <= 0 or win_length <= 0 or hop_length <= 0 or n_mels <= 0:
@@ -294,10 +367,16 @@ class VCTKDataModule(LightningDataModule):
         self.save_hyperparameters(logger=False)
         self.data_dir = Path(data_dir).expanduser().resolve()
         self.microphone = microphone
-        self.val_ratio = val_ratio
-        self.test_ratio = test_ratio
+        self.split_strategy = split_strategy or RatioSpeakerSplit()
+        self.test_reference_mode: Literal["same_speaker", "different_speaker"] = (
+            test_reference_mode
+        )
         self.sample_rate = sample_rate
         self.max_duration_seconds = max_duration_seconds
+        self.feature_cache_dir = (
+            Path(feature_cache_dir).expanduser().resolve() if feature_cache_dir else None
+        )
+        self.require_feature_cache = require_feature_cache
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
@@ -324,47 +403,38 @@ class VCTKDataModule(LightningDataModule):
             self.data_dir / "wav48_silence_trimmed",
         )
         missing_paths = [str(path) for path in required_paths if not path.is_dir()]
+        if self.require_feature_cache:
+            if self.feature_cache_dir is None:
+                missing_paths.append("feature_cache_dir is not configured")
+            else:
+                missing_paths.extend(
+                    str(path)
+                    for path in (
+                        self.feature_cache_dir / "content",
+                        self.feature_cache_dir / "speaker",
+                    )
+                    if not path.is_dir()
+                )
         if missing_paths:
             raise FileNotFoundError("Missing VCTK paths:\n" + "\n".join(missing_paths))
 
-    def _split_speakers(self) -> Tuple[List[str], List[str], List[str]]:
-        transcript_root = self.data_dir / "txt"
-        audio_root = self.data_dir / "wav48_silence_trimmed"
-        transcript_speakers = {
-            path.name
-            for path in transcript_root.iterdir()
-            if path.is_dir() and path.name.startswith("p")
-        }
-        audio_speakers = {
-            path.name
-            for path in audio_root.iterdir()
-            if path.is_dir() and path.name.startswith("p")
-        }
-        speakers = sorted(transcript_speakers & audio_speakers)
-        if len(speakers) < 3:
-            raise ValueError("VCTK requires at least three speakers for train/val/test splits")
-
-        val_count = max(1, round(len(speakers) * self.val_ratio))
-        test_count = max(1, round(len(speakers) * self.test_ratio))
-        if val_count + test_count >= len(speakers):
-            raise ValueError("VCTK split ratios leave no training speakers")
-
-        train_end = len(speakers) - val_count - test_count
-        val_end = len(speakers) - test_count
-        return speakers[:train_end], speakers[train_end:val_end], speakers[val_end:]
-
-    def _dataset(self, speaker_ids: Sequence[str], randomize: bool) -> VCTKDataset:
+    def _dataset(
+        self,
+        samples: Sequence[VCTKSample],
+        randomize: bool,
+        reference_mode: Literal["same_speaker", "different_speaker"] = "same_speaker",
+    ) -> VCTKDataset:
         return VCTKDataset(
-            data_dir=self.data_dir,
-            speaker_ids=speaker_ids,
-            microphone=self.microphone,
+            samples=samples,
             sample_rate=self.sample_rate,
             max_duration_seconds=self.max_duration_seconds,
             randomize=randomize,
+            reference_mode=reference_mode,
+            feature_cache_dir=self.feature_cache_dir,
         )
 
     def setup(self, stage: Optional[str] = None) -> None:
-        """Create speaker-disjoint datasets for the requested stage."""
+        """Create datasets using the configured split strategy."""
         if self.trainer is not None:
             if self.batch_size % self.trainer.world_size != 0:
                 raise RuntimeError(
@@ -373,14 +443,19 @@ class VCTKDataModule(LightningDataModule):
                 )
             self.batch_size_per_device = self.batch_size // self.trainer.world_size
 
-        train_speakers, val_speakers, test_speakers = self._split_speakers()
+        samples = discover_vctk_samples(self.data_dir, self.microphone)
+        split = self.split_strategy.split(samples)
         if stage in (None, "fit", "validate"):
             if self.data_train is None:
-                self.data_train = self._dataset(train_speakers, randomize=True)
+                self.data_train = self._dataset(split.train, randomize=True)
             if self.data_val is None:
-                self.data_val = self._dataset(val_speakers, randomize=False)
+                self.data_val = self._dataset(split.val, randomize=False)
         if stage in (None, "test", "predict") and self.data_test is None:
-            self.data_test = self._dataset(test_speakers, randomize=False)
+            self.data_test = self._dataset(
+                split.test,
+                randomize=False,
+                reference_mode=self.test_reference_mode,
+            )
 
     def _dataloader(self, dataset: VCTKDataset, shuffle: bool) -> DataLoader[Dict[str, Any]]:
         return DataLoader(
