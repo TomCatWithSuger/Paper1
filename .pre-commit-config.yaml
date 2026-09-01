@@ -112,8 +112,7 @@ repos:
       - id: mdformat
         args: ["--number"]
         additional_dependencies:
-          - mdformat-gfm
-          - mdformat_frontmatter
+          - mdformat-myst
           # - mdformat-toc
           # - mdformat-black
 

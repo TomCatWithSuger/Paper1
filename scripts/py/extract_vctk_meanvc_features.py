@@ -38,17 +38,20 @@ def _dotenv_value(name: str) -> str | None:
 
 
 def _configured_path(name: str, fallback: Path) -> Path:
+    """读取路径配置，并在未配置时使用备用路径。"""
     value = _dotenv_value(name)
     return Path(value).expanduser().resolve() if value else fallback.resolve()
 
 
 def _load_waveform(path: Path) -> tuple[torch.Tensor, int]:
+    """读取音频并将多声道波形转换为单声道张量。"""
     result: tuple[Any, int] = sf.read(path, dtype="float32", always_2d=True)
     audio, sample_rate = result
     return torch.from_numpy(audio).mean(dim=1), int(sample_rate)
 
 
 def _save_tensor(path: Path, tensor: torch.Tensor) -> None:
+    """以 float16 和原子替换方式保存特征张量。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = path.with_suffix(path.suffix + ".tmp")
     torch.save(tensor.detach().cpu().to(torch.float16).contiguous(), temporary_path)
@@ -56,6 +59,7 @@ def _save_tensor(path: Path, tensor: torch.Tensor) -> None:
 
 
 def _resolve_device(value: str) -> torch.device:
+    """解析计算设备并检查 CUDA 是否可用。"""
     if value == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device = torch.device(value)

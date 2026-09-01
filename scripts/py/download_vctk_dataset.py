@@ -11,14 +11,13 @@ from zipfile import ZipFile
 import requests
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-VCTK_URL = (
-    "https://datashare.ed.ac.uk/bitstreams/60ba27b5-0330-4cdf-87bf-201e7ba30ce0/download"
-)
+VCTK_URL = "https://datashare.ed.ac.uk/bitstreams/60ba27b5-0330-4cdf-87bf-201e7ba30ce0/download"
 VCTK_ARCHIVE_NAME = "VCTK-Corpus-0.92.zip"
 VCTK_MD5 = "e04e2a665ac7db1d6e8ec76ba9d5a8c5"
 
 
 def _md5(path: Path) -> str:
+    """计算文件的 MD5 摘要用于数据完整性校验。"""
     digest = hashlib.md5(usedforsecurity=False)
     with path.open("rb") as file:
         for chunk in iter(lambda: file.read(8 * 1024 * 1024), b""):
@@ -27,10 +26,12 @@ def _md5(path: Path) -> str:
 
 
 def _is_vctk_root(path: Path) -> bool:
+    """判断目录是否包含完整的 VCTK 核心结构。"""
     return (path / "txt").is_dir() and (path / "wav48_silence_trimmed").is_dir()
 
 
 def _download_archive(url: str, destination: Path, expected_md5: str) -> None:
+    """支持断点续传地下载并校验 VCTK 压缩包。"""
     if destination.is_file() and _md5(destination) == expected_md5:
         print(f"已存在并通过校验: {destination}")
         return
@@ -75,6 +76,7 @@ def _download_archive(url: str, destination: Path, expected_md5: str) -> None:
 
 
 def _safe_extract(archive_path: Path, destination: Path) -> None:
+    """拒绝符号链接和路径穿越后安全解压 ZIP 文件。"""
     destination_root = destination.resolve()
     with ZipFile(archive_path) as archive:
         for member in archive.infolist():
@@ -88,6 +90,7 @@ def _safe_extract(archive_path: Path, destination: Path) -> None:
 
 
 def _find_vctk_root(extracted_dir: Path) -> Path:
+    """在解压目录中定位实际的 VCTK 数据根目录。"""
     if _is_vctk_root(extracted_dir):
         return extracted_dir
     for transcript_dir in extracted_dir.rglob("txt"):

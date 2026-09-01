@@ -141,8 +141,7 @@ class UnseenSpeakerSentenceSplit:
         )
         if missing_test_pairs:
             formatted_pairs = ", ".join(
-                f"{speaker_id}_{sentence_id}"
-                for speaker_id, sentence_id in missing_test_pairs
+                f"{speaker_id}_{sentence_id}" for speaker_id, sentence_id in missing_test_pairs
             )
             raise ValueError(f"Missing evaluation utterances: {formatted_pairs}")
 
@@ -161,7 +160,7 @@ class UnseenSpeakerSentenceSplit:
         val: list[VCTKSample] = []
         for speaker_id, speaker_samples in sorted(grouped.items()):
             ordered = sorted(speaker_samples, key=lambda sample: sample.utterance_id)
-            Random(f"{self.seed}:{speaker_id}").shuffle(ordered)
+            Random(f"{self.seed}:{speaker_id}").shuffle(ordered)  # nosec B311 - 仅用于数据划分
             val_count = max(2, round(len(ordered) * self.val_ratio))
             if len(ordered) - val_count < 2:
                 raise ValueError(

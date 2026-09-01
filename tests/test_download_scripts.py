@@ -8,7 +8,6 @@ from scripts.py import download_meanvc_models as meanvc_download
 from scripts.py import download_vctk_dataset as vctk_download
 from scripts.py import extract_vctk_meanvc_features as feature_extraction
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -35,12 +34,7 @@ def test_download_vctk_dataset_installs_normalized_root(
     vctk_download.download_vctk_dataset(destination, archive_path)
 
     assert (destination / "txt" / "p225" / "p225_001.txt").is_file()
-    assert (
-        destination
-        / "wav48_silence_trimmed"
-        / "p225"
-        / "p225_001_mic1.flac"
-    ).is_file()
+    assert (destination / "wav48_silence_trimmed" / "p225" / "p225_001_mic1.flac").is_file()
     assert not archive_path.exists()
 
 

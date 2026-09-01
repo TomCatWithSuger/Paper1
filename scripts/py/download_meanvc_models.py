@@ -21,6 +21,7 @@ FILE_HASHES = {
 
 
 def _dotenv_value(name: str) -> str | None:
+    """优先读取环境变量，其次读取项目根目录的 .env。"""
     value = os.getenv(name)
     if value:
         return value
@@ -38,6 +39,7 @@ def _dotenv_value(name: str) -> str | None:
 
 
 def _default_destination() -> Path:
+    """解析 MeanVC 预训练文件的默认保存目录。"""
     project_default = PROJECT_ROOT / "pretrained" / "meanvc"
     configured_dir = _dotenv_value("MEANVC_PRETRAINED_DIR")
     if configured_dir:
@@ -49,6 +51,7 @@ def _default_destination() -> Path:
 
 
 def _sha256(path: Path) -> str:
+    """计算文件的 SHA-256 摘要。"""
     digest = hashlib.sha256()
     with path.open("rb") as file:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
@@ -60,6 +63,7 @@ def _download_checked(
     destination: Path,
     downloader: Callable[[Path], None],
 ) -> None:
+    """下载文件并在原子替换前校验 SHA-256。"""
     expected_hash = FILE_HASHES[destination.name]
     if destination.is_file() and _sha256(destination) == expected_hash:
         print(f"已存在: {destination}")
@@ -79,6 +83,7 @@ def _download_checked(
 
 
 def _download_https_file(url: str, destination: Path) -> None:
+    """以流式方式将 HTTPS 资源写入指定文件。"""
     with requests.get(url, stream=True, timeout=60) as response:
         response.raise_for_status()
         with destination.open("wb") as file:
