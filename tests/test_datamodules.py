@@ -7,7 +7,6 @@ from src.data.atcosim_datamodule import ATCOSIMDataModule
 from src.data.components.vctk_splits import (
     RatioSpeakerSplit,
     UnseenSpeakerSentenceSplit,
-    discover_vctk_samples,
 )
 from src.data.mnist_datamodule import MNISTDataModule
 from src.data.vctk_datamodule import VCTKDataModule
@@ -15,11 +14,10 @@ from src.data.vctk_datamodule import VCTKDataModule
 
 @pytest.mark.parametrize("batch_size", [32, 128])
 def test_mnist_datamodule(batch_size: int) -> None:
-    """Tests `MNISTDataModule` to verify that it can be downloaded correctly, that the necessary
-    attributes were created (e.g., the dataloader objects), and that dtypes and batch sizes
-    correctly match.
+    """验证 MNIST 的下载、数据划分、数据加载器、批大小和张量类型。
 
-    :param batch_size: Batch size of the data to be loaded by the dataloader.
+    :param batch_size: 参数化测试使用的数据加载批大小。
+    :return: 无返回值；任一数据数量、形状或类型断言不满足时测试失败。
     """
     data_dir = "data/"
 
@@ -47,7 +45,12 @@ def test_mnist_datamodule(batch_size: int) -> None:
 
 @pytest.mark.parametrize("batch_size", [2, 4])
 def test_atcosim_datamodule(batch_size: int, atcosim_data_dir: Path) -> None:
-    """Test ATCOSIM loading and collation without external dataset dependencies."""
+    """验证 ATCOSIM 的数据划分、波形加载和动态批处理结果。
+
+    :param batch_size: 参数化测试使用的数据加载批大小。
+    :param atcosim_data_dir: 真实或临时生成的 ATCOSIM 数据根目录。
+    :return: 无返回值；数据集、批形状或字段类型不符合预期时测试失败。
+    """
     dm = ATCOSIMDataModule(data_dir=str(atcosim_data_dir), batch_size=batch_size)
 
     dm.prepare_data()
@@ -74,7 +77,12 @@ def test_atcosim_datamodule(batch_size: int, atcosim_data_dir: Path) -> None:
 
 @pytest.mark.parametrize("batch_size", [2, 4])
 def test_vctk_datamodule(batch_size: int, vctk_data_dir: Path) -> None:
-    """Test VCTK pairing, preprocessing, speaker splits, and collation."""
+    """验证 VCTK 配对、预处理、说话人划分和动态批处理结果。
+
+    :param batch_size: 参数化测试使用的数据加载批大小。
+    :param vctk_data_dir: 真实或临时生成的 VCTK 数据根目录。
+    :return: 无返回值；数据划分、张量形状或字段内容不符合预期时测试失败。
+    """
     dm = VCTKDataModule(
         data_dir=str(vctk_data_dir),
         split_strategy=RatioSpeakerSplit(val_ratio=0.2, test_ratio=0.2),
@@ -124,6 +132,11 @@ def test_vctk_datamodule(batch_size: int, vctk_data_dir: Path) -> None:
 
 
 def test_vctk_unseen_speaker_sentence_split(vctk_data_dir: Path) -> None:
+    """验证未见说话人和指定语句划分及跨说话人参考选择。
+
+    :param vctk_data_dir: 真实或临时生成的 VCTK 数据根目录。
+    :return: 无返回值；训练、验证、测试集合边界或参考说话人不正确时测试失败。
+    """
     evaluation_speakers = {"p229", "p230"}
     evaluation_sentences = {"001", "002"}
     dm = VCTKDataModule(
@@ -162,21 +175,17 @@ def test_vctk_unseen_speaker_sentence_split(vctk_data_dir: Path) -> None:
     )
 
 
-def test_vctk_cached_meanvc_features(vctk_data_dir: Path, tmp_path: Path) -> None:
-    """测试离线内容特征、目标说话人向量和参考说话人向量的批处理。"""
-    cache_dir = tmp_path / "meanvc_features"
-    for sample in discover_vctk_samples(vctk_data_dir, "mic1"):
-        content_path = cache_dir / "content" / f"{sample.utterance_id}.pt"
-        speaker_path = cache_dir / "speaker" / f"{sample.utterance_id}.pt"
-        content_path.parent.mkdir(parents=True, exist_ok=True)
-        speaker_path.parent.mkdir(parents=True, exist_ok=True)
-        torch.save(torch.randn(256, 20), content_path)
-        torch.save(torch.randn(256), speaker_path)
+def test_vctk_cached_meanvc_features(vctk_data_dir: Path, vctk_feature_cache_dir: Path) -> None:
+    """验证 VCTK 离线内容特征及目标和参考说话人向量的批处理。
 
+    :param vctk_data_dir: 真实或临时生成的 VCTK 数据根目录。
+    :param vctk_feature_cache_dir: 与当前 VCTK 样本匹配的真实或临时 MeanVC 缓存目录。
+    :return: 无返回值；缓存张量形状、长度或批处理字段不符合预期时测试失败。
+    """
     dm = VCTKDataModule(
         data_dir=str(vctk_data_dir),
         split_strategy=RatioSpeakerSplit(val_ratio=0.2, test_ratio=0.2),
-        feature_cache_dir=str(cache_dir),
+        feature_cache_dir=str(vctk_feature_cache_dir),
         require_feature_cache=True,
         batch_size=2,
     )
