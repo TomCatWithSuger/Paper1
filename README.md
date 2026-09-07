@@ -59,6 +59,46 @@ source .venv/bin/activate
 .venv\Scripts\Activate.ps1
 ```
 
+### Note
+
+**`uv lock`只更新锁文件，不安装软件包**。
+
+虽然当前终端已激活 Conda 环境，但运行：
+
+```bash
+uv lock
+```
+
+只会：
+
+1. 读取 `pyproject.toml`；
+2. 解析依赖；
+3. 把 `soundfile`、`cffi`、`pycparser`写入 `uv.lock`；
+4. **不会修改当前 Conda 环境**。
+
+输出中的：
+
+```text
+Added soundfile v0.13.1
+```
+
+表示“添加到 `uv.lock`”，不是“安装到 `Lightning-Template`”。
+
+两套环境的关系
+
+| 用途           | 配置               | 锁文件           | 安装/同步方式                  |
+| -------------- | ------------------ | ---------------- | ------------------------------ |
+| 本机 Conda     | `environment.yaml` | `conda-lock.yml` | `conda install` / `conda-lock` |
+| GitHub Actions | `pyproject.toml`   | `uv.lock`        | `uv sync --locked`             |
+
+理论上可以使用：
+
+```bash
+uv sync --active
+```
+
+让 uv 向当前 Conda 环境安装依赖，但这会混用 Conda 和 uv 的依赖管理，甚至可能同步或替换现有包。这个项目本机既然明确使用 Conda，建议本机依赖通过 `conda install`管理；`uv lock`只用于维护 GitHub Actions 的锁文件。
+
 ## How to run
 
 Train model with default configuration

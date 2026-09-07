@@ -5,7 +5,7 @@ from lightning_utilities.core.rank_zero import rank_prefixed_message, rank_zero_
 
 
 class RankedLogger(logging.LoggerAdapter):
-    """A multi-GPU-friendly python command line logger."""
+    """支持多进程 rank 标识的命令行日志记录器。"""
 
     def __init__(
         self,
@@ -13,27 +13,24 @@ class RankedLogger(logging.LoggerAdapter):
         rank_zero_only: bool = False,
         extra: Optional[Mapping[str, object]] = None,
     ) -> None:
-        """Initializes a multi-GPU-friendly python command line logger that logs on all processes
-        with their rank prefixed in the log message.
+        """初始化支持多进程输出的日志记录器。
 
-        :param name: The name of the logger. Default is ``__name__``.
-        :param rank_zero_only: Whether to force all logs to only occur on the rank zero process. Default is `False`.
-        :param extra: (Optional) A dict-like object which provides contextual information. See `logging.LoggerAdapter`.
+        :param name: 日志记录器名称。
+        :param rank_zero_only: 是否只允许 rank 0 进程输出日志。
+        :param extra: 提供额外上下文信息的映射。
         """
         logger = logging.getLogger(name)
         super().__init__(logger=logger, extra=extra)
         self.rank_zero_only = rank_zero_only
 
     def log(self, level: int, msg: str, rank: Optional[int] = None, *args, **kwargs) -> None:
-        """Delegate a log call to the underlying logger, after prefixing its message with the rank
-        of the process it's being logged from. If `'rank'` is provided, then the log will only
-        occur on that rank/process.
+        """为消息添加当前进程 rank，并按指定 rank 输出日志。
 
-        :param level: The level to log at. Look at `logging.__init__.py` for more information.
-        :param msg: The message to log.
-        :param rank: The rank to log at.
-        :param args: Additional args to pass to the underlying logging function.
-        :param kwargs: Any additional keyword args to pass to the underlying logging function.
+        :param level: 日志级别。
+        :param msg: 日志消息。
+        :param rank: 允许输出日志的进程 rank；未指定时允许所有进程。
+        :param args: 传递给底层日志函数的位置参数。
+        :param kwargs: 传递给底层日志函数的关键字参数。
         """
         if self.isEnabledFor(level):
             msg, kwargs = self.process(msg, kwargs)

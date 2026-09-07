@@ -1,0 +1,8 @@
+# @package data
+
+split_strategy:
+  _target_: src.data.components.vctk_splits.RatioSpeakerSplit
+  val_ratio: 0.1
+  test_ratio: 0.1
+
+test_reference_mode: same_speaker

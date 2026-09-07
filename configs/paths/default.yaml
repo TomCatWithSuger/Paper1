@@ -6,6 +6,16 @@ root_dir: ${oc.env:PROJECT_ROOT}
 # path to data directory
 data_dir: ${paths.root_dir}/data/
 
+# 外部资源优先读取环境变量，未配置时使用项目内目录
+atcosim_data_dir: ${oc.env:ATCOSIM_DATA_DIR,${paths.root_dir}/data/ATCOSIM}
+vctk_data_dir: ${oc.env:VCTK_DATA_DIR,${paths.root_dir}/data/VCTK}
+meanvc_pretrained_dir: ${oc.env:MEANVC_PRETRAINED_DIR,${paths.root_dir}/pretrained/meanvc}
+meanvc_content_encoder_ckpt: ${oc.env:MEANVC_CONTENT_ENCODER_CKPT,${paths.meanvc_pretrained_dir}/fastu2++.pt}
+meanvc_wavlm_ckpt: ${oc.env:MEANVC_WAVLM_CKPT,${paths.meanvc_pretrained_dir}/wavlm_large.pt}
+meanvc_speaker_encoder_ckpt: ${oc.env:MEANVC_SPEAKER_ENCODER_CKPT,${paths.meanvc_pretrained_dir}/wavlm_large_finetune.pth}
+meanvc_speaker_encoder_source: ${oc.env:MEANVC_SPEAKER_ENCODER_SOURCE,${paths.meanvc_pretrained_dir}/ecapa_tdnn.py}
+meanvc_feature_cache_dir: ${oc.env:MEANVC_FEATURE_CACHE_DIR,${paths.root_dir}/data/meanvc_features/vctk}
+
 # path to logging directory
 log_dir: ${paths.root_dir}/logs/
 

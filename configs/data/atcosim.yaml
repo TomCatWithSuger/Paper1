@@ -1,5 +1,5 @@
 _target_: src.data.atcosim_datamodule.ATCOSIMDataModule
-data_dir: /media/B8BE-8B5F/Tom/data/ATCOSIM
+data_dir: ${paths.atcosim_data_dir}
 fold: 0
 batch_size: 16
 num_workers: 0

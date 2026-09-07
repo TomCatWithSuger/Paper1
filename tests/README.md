@@ -54,7 +54,7 @@
 
 ### `test_sweeps.py`
 
-- 作用：通过命令行测试 Hydra 多运行模式和超参数搜索功能。
+- 作用：通过命令行测试 Hydra 多运行模式和超参数搜索功能。datamodules 测试数据本身是否正确加载；sweeps 则进一步验证这些数据能否通过真实命令行进入模型并完成最小训练流程。
 - 主要测试：
   - `test_experiments`：运行 `configs/experiment/` 中的全部实验配置。
   - `test_hydra_sweep`：测试多个学习率组合的普通 Hydra sweep。
@@ -155,3 +155,34 @@ pytest -m "not slow"
 # 运行测试并统计 src 目录覆盖率
 pytest --cov src
 ```
+
+## 临时数据使用
+
+| 测试部分      | 是否使用这里生成的临时数据 | 具体情况                                                                                                        |
+| ------------- | -------------------------: | --------------------------------------------------------------------------------------------------------------- |
+| `datamodules` |                   **使用** | ATCOSIM 测试使用 `atcosim_data_dir`；VCTK 测试使用 `vctk_data_dir`；缓存测试额外使用 `vctk_feature_cache_dir`。 |
+| `models`      |                 **不使用** | 模型测试直接通过 `torch.randn()` 等方式生成输入张量，不读取临时音频数据集。                                     |
+| `sweeps`      |               **部分使用** | ATCOSIM、VCTK 实验通过 `experiment_data_overrides` 使用临时数据；`example` 实验使用 MNIST。                     |
+| `train`       |     **不使用这些临时数据** | `cfg_train` 默认是 MNIST，复用或下载项目中的 `MNIST`。                                                          |
+| `eval`        |     **不使用这些临时数据** | 先使用默认 MNIST 配置训练检查点，再用同一数据进行评估。                                                         |
+| `configs`     |                 **不使用** | 只实例化 Hydra 配置、模型和 DataModule，不调用数据加载。                                                        |
+
+具体依赖关系：
+
+```text
+atcosim_data_dir
+├── test_atcosim_datamodule
+└── ATCOSIM sweep 实验
+
+vctk_data_dir
+├── test_vctk_datamodule
+├── test_vctk_unseen_speaker_sentence_split
+├── test_vctk_cached_meanvc_features
+└── VCTK sweep 实验
+
+vctk_feature_cache_dir
+├── test_vctk_cached_meanvc_features
+└── conditional_flow_matching_vctk sweep 实验
+```
+
+因此，临时数据主要服务于 **DataModule 测试和外部数据实验的 sweep 冒烟测试**；模型、普通训练和评估测试不使用它们。
