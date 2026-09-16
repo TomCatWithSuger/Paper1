@@ -37,6 +37,7 @@ dependencies:
   - setuptools<82
 
   # --------- loggers --------- #
+  - tensorboard=2.*
   # - wandb
   # - neptune-client
   # - mlflow
