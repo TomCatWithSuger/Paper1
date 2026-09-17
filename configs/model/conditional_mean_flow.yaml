@@ -1,0 +1,26 @@
+_target_: src.models.conditional_mean_flow_module.ConditionalMeanFlowLitModule
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 0.0002
+
+scheduler: null
+
+equal_time_probability: 0.75
+
+condition_encoder:
+  _target_: src.models.components.meanvc_conditioning.CachedConditionEncoder
+  content_dim: 256
+  speaker_dim: 256
+  output_dim: 128
+
+net:
+  _target_: src.models.components.conditional_mean_flow_unet.ConditionalMeanFlowUNet
+  n_mels: 80
+  condition_dim: 128
+  hidden_channels: 512
+  time_embedding_dim: 128
+  kernel_size: 3
+
+compile: false

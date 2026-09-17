@@ -1,9 +1,13 @@
-"""用于 Mel 域条件 Flow Matching 的 FastVoiceGrad 风格一维 U-Net。
+"""Mel 域条件 Flow Matching 的 FastVoiceGrad 风格一维 U-Net。
 
-网络保持统一接口 ``model(x_t, t, h)``：带噪 Mel ``x_t`` 与结构化条件 ``h`` 在输入处
-融合，连续时间 ``t`` 注入各层隐藏特征。主干包含 12 个带权重归一化的卷积层、两次下采样、
-两次上采样、GLU 门控和 U-Net 跳跃连接。
+- 提供带权重归一化和 GLU 的卷积组件。
+- 提供统一的 ``model(x_t, t, h)`` 速度场接口。
+- 提供线性概率路径插值和多步 Euler 生成能力。
 """
+
+# ====================
+# 1. 导入
+# ====================
 
 import torch
 import torch.nn.functional as F
@@ -11,6 +15,11 @@ from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
 
 from src.models.components.conditional_flow_matching import ContinuousTimeEmbedding
+
+# ====================
+# 2. 定义
+# 门控卷积组件
+# ====================
 
 
 class GatedConv1d(nn.Module):
@@ -74,11 +83,21 @@ class GatedConvTranspose1d(nn.Module):
         return F.glu(self.conv(inputs), dim=1)
 
 
+# ====================
+# 3. 核心模型
+# 条件 Flow Matching U-Net
+# ====================
+
+
 class ConditionalFlowMatchingUNet(nn.Module):
     """预测条件 Flow Matching 速度场的 12 层一维 U-Net。
 
     编码器逐步压缩时间分辨率以扩大感受野，瓶颈层在最低分辨率上建模长程结构，解码器再 恢复原始帧率。跳跃连接保留局部语音细节，GLU 控制特征通过比例，权重归一化用于稳定 深层卷积网络的训练。
     """
+
+    # ====================
+    # 3.1 初始化
+    # ====================
 
     def __init__(
         self,
@@ -148,6 +167,11 @@ class ConditionalFlowMatchingUNet(nn.Module):
             nn.Conv1d(hidden_channels, n_mels, kernel_size=kernel_size, padding=kernel_size // 2)
         )
 
+    # ====================
+    # 3.2 工具函数
+    # 张量尺寸与掩码处理
+    # ====================
+
     @staticmethod
     def _resize_mask(mask: torch.Tensor | None, frames: int) -> torch.Tensor | None:
         """使用最近邻插值将有效帧掩码调整到当前 U-Net 分辨率。"""
@@ -175,21 +199,18 @@ class ConditionalFlowMatchingUNet(nn.Module):
         """将同一个全局流时间特征注入当前分辨率的所有帧。"""
         return hidden + time_embedding.unsqueeze(2)
 
-    def forward(
+    # ====================
+    # 3.3 内部函数
+    # 输入校验与共享主干
+    # ====================
+
+    def _validate_forward_inputs(
         self,
         noisy_mels: torch.Tensor,
         times: torch.Tensor,
         condition: torch.Tensor,
-        target_mask: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        """根据 ``x_t``、``t`` 和统一条件 ``h`` 预测 Mel 速度。
-
-        :param noisy_mels: 形状为 ``[batch, n_mels, frames]`` 的带噪状态 ``x_t``。
-        :param times: 形状为 ``[batch]`` 的连续流时间。
-        :param condition: 形状为 ``[batch, condition_dim, condition_frames]`` 的条件 ``h``。
-        :param target_mask: 形状为 ``[batch, frames]`` 的有效帧掩码。
-        :return: 与 ``noisy_mels`` 形状相同的速度张量。
-        """
+    ) -> None:
+        """校验速度场输入的维度、通道数和批大小。"""
         if noisy_mels.ndim != 3 or condition.ndim != 3:
             raise ValueError("noisy_mels 和 condition 必须是三维张量")
         if noisy_mels.size(1) != self.n_mels:
@@ -201,13 +222,20 @@ class ConditionalFlowMatchingUNet(nn.Module):
         if times.ndim != 1 or times.size(0) != noisy_mels.size(0):
             raise ValueError("times 必须具有形状 [batch]")
 
+    def _forward_with_time_embedding(
+        self,
+        noisy_mels: torch.Tensor,
+        condition: torch.Tensor,
+        time_embedding: torch.Tensor,
+        target_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """使用预先构造的时间条件执行共享 U-Net 主干。"""
         frames = noisy_mels.size(2)
         condition = self._align(condition, frames)
         if target_mask is not None:
             valid = target_mask.unsqueeze(1).to(noisy_mels.dtype)
             noisy_mels = noisy_mels * valid
             condition = condition * valid
-        time_embedding = self.time_embedding(times)
 
         hidden = self.input_conv(torch.cat((noisy_mels, condition), dim=1))
         hidden = self._apply_mask(self._add_time(hidden, time_embedding), target_mask)
@@ -240,6 +268,40 @@ class ConditionalFlowMatchingUNet(nn.Module):
 
         velocity = self.output_conv(hidden)
         return self._apply_mask(velocity, target_mask)
+
+    # ====================
+    # 3.4 核心流程
+    # 速度场预测
+    # ====================
+
+    def forward(
+        self,
+        noisy_mels: torch.Tensor,
+        times: torch.Tensor,
+        condition: torch.Tensor,
+        target_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """根据 ``x_t``、``t`` 和统一条件 ``h`` 预测 Mel 速度。
+
+        :param noisy_mels: 形状为 ``[batch, n_mels, frames]`` 的带噪状态 ``x_t``。
+        :param times: 形状为 ``[batch]`` 的连续流时间。
+        :param condition: 形状为 ``[batch, condition_dim, condition_frames]`` 的条件 ``h``。
+        :param target_mask: 形状为 ``[batch, frames]`` 的有效帧掩码。
+        :return: 与 ``noisy_mels`` 形状相同的速度张量。
+        """
+        self._validate_forward_inputs(noisy_mels, times, condition)
+        time_embedding = self.time_embedding(times)
+        return self._forward_with_time_embedding(
+            noisy_mels=noisy_mels,
+            condition=condition,
+            time_embedding=time_embedding,
+            target_mask=target_mask,
+        )
+
+    # ====================
+    # 3.5 对外接口
+    # 插值与生成
+    # ====================
 
     @staticmethod
     def interpolate(
@@ -285,6 +347,11 @@ class ConditionalFlowMatchingUNet(nn.Module):
                 target_mask=target_mask,
             )
         return self._apply_mask(samples, target_mask)
+
+
+# ====================
+# 4. 入口
+# ====================
 
 
 if __name__ == "__main__":

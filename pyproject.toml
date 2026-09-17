@@ -24,6 +24,7 @@ dependencies = [
   "setuptools==80.10.2",
   "soundfile==0.13.1",
   "s3prl==0.4.18",
+  "tensorboard>=2,<3",
   "torch==2.5.1",
   "torchaudio==2.5.1",
   "torchmetrics==0.11.4",
