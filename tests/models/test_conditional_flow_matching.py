@@ -4,6 +4,7 @@ from torch.nn.utils import parametrize
 
 from src.models.components.conditional_flow_matching import (
     ConditionalFlowMatchingTransformer,
+    ContinuousTimeEmbedding,
 )
 from src.models.components.conditional_flow_matching_unet import (
     ConditionalFlowMatchingUNet,
@@ -61,6 +62,16 @@ def test_condition_encoder_shapes() -> None:
 
     assert condition.shape == (2, 8, 12)
     assert torch.count_nonzero(condition[1, :, 9:]) == 0
+
+
+def test_continuous_time_embedding_derivative_is_bounded() -> None:
+    """测试时间嵌入不会在 MeanFlow JVP 中放大时间导数。"""
+    embedding = ContinuousTimeEmbedding(128)
+    times = torch.tensor([0.37])
+
+    derivative = torch.autograd.functional.jacobian(embedding, times)
+
+    assert derivative.abs().max() <= 2 * torch.pi
 
 
 def test_conditional_flow_matching_shapes() -> None:

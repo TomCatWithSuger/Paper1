@@ -37,7 +37,7 @@ class ContinuousTimeEmbedding(nn.Module):
         """
         half_dim = self.embedding_dim // 2
         frequencies = torch.exp(
-            log(10_000)
+            -log(10_000)
             * torch.arange(half_dim, device=times.device, dtype=torch.float32)
             / max(half_dim - 1, 1)
         )
