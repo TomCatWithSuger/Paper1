@@ -3,14 +3,14 @@
 import torch
 from torch import nn
 
-from src.models.components.conditional_flow_matching import ContinuousTimeEmbedding
-from src.models.components.conditional_flow_matching_unet import (
-    ConditionalFlowMatchingUNet,
+from src.models.components.flow_matching_backbone import (
+    ConditionalUNetBackbone,
+    ContinuousTimeEmbedding,
 )
 
 
-class ConditionalMeanFlowUNet(ConditionalFlowMatchingUNet):
-    """在 B1 U-Net 主干上增加 MeanFlow 区间条件。"""
+class ConditionalMeanFlowUNet(ConditionalUNetBackbone):
+    """在共享 U-Net 主干上实现 MeanFlow 区间条件。"""
 
     def __init__(
         self,
@@ -27,7 +27,6 @@ class ConditionalMeanFlowUNet(ConditionalFlowMatchingUNet):
             hidden_channels=hidden_channels,
             time_embedding_dim=time_embedding_dim,
             kernel_size=kernel_size,
-            integration_steps=1,
         )
         self.interval_embedding = nn.Sequential(
             ContinuousTimeEmbedding(time_embedding_dim),
@@ -44,14 +43,7 @@ class ConditionalMeanFlowUNet(ConditionalFlowMatchingUNet):
         target_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """预测区间 ``[r, t]`` 上的平均速度 ``u_theta(x_t, r, t, h)``。"""
-        if noisy_mels.ndim != 3 or condition.ndim != 3:
-            raise ValueError("noisy_mels 和 condition 必须是三维张量")
-        if noisy_mels.size(1) != self.n_mels:
-            raise ValueError(f"noisy_mels 必须包含 {self.n_mels} 个通道")
-        if condition.size(1) != self.condition_dim:
-            raise ValueError(f"condition 必须包含 {self.condition_dim} 个通道")
-        if noisy_mels.size(0) != condition.size(0):
-            raise ValueError("noisy_mels 和 condition 的 batch 大小必须一致")
+        self._validate_inputs(noisy_mels, condition)
         batch_size = noisy_mels.size(0)
         if start_times.ndim != 1 or start_times.size(0) != batch_size:
             raise ValueError("start_times 必须具有形状 [batch]")
