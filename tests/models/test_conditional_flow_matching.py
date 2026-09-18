@@ -4,11 +4,11 @@ from torch.nn.utils import parametrize
 
 from src.models.components.conditional_flow_matching import (
     ConditionalFlowMatchingTransformer,
-    ContinuousTimeEmbedding,
 )
 from src.models.components.conditional_flow_matching_unet import (
     ConditionalFlowMatchingUNet,
 )
+from src.models.components.flow_matching_backbone import ContinuousTimeEmbedding
 from src.models.components.meanvc_conditioning import CachedConditionEncoder
 from src.models.conditional_flow_matching_module import ConditionalFlowMatchingLitModule
 

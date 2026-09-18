@@ -5,47 +5,13 @@
 ``model(x_t, t, h)`` 接口，便于后续 Mean Flow、U-Net 或 DiT 主干复用相同条件管线。
 """
 
-from math import log, pi
+from math import log
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 
-
-class ContinuousTimeEmbedding(nn.Module):
-    """使用多频率正弦特征表示标量流时间。
-
-    单个标量 ``t`` 难以直接表达不同时间尺度。正弦特征为 Transformer 提供平滑且包含多个
-    频率的时间坐标，使模型能够处理训练区间内的任意连续时间。
-    """
-
-    def __init__(self, embedding_dim: int) -> None:
-        """初始化连续时间嵌入。
-
-        :param embedding_dim: 输出正弦特征的维数。
-        """
-        super().__init__()
-        if embedding_dim < 2:
-            raise ValueError("embedding_dim must be at least 2")
-        self.embedding_dim = embedding_dim
-
-    def forward(self, times: torch.Tensor) -> torch.Tensor:
-        """返回形状为 ``[batch, embedding_dim]`` 的时间嵌入。
-
-        :param times: 形状为 ``[batch]`` 的连续流时间。
-        :return: 与 ``times`` 位于同一设备的正弦特征。
-        """
-        half_dim = self.embedding_dim // 2
-        frequencies = torch.exp(
-            -log(10_000)
-            * torch.arange(half_dim, device=times.device, dtype=torch.float32)
-            / max(half_dim - 1, 1)
-        )
-        embeddings = 2 * pi * times.float().unsqueeze(1) * frequencies.unsqueeze(0)
-        embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=1)
-        if self.embedding_dim % 2 == 1:
-            embeddings = F.pad(embeddings, (0, 1))
-        return embeddings
+from src.models.components.flow_matching_backbone import ContinuousTimeEmbedding
 
 
 class ConditionalTransformerBlock(nn.Module):

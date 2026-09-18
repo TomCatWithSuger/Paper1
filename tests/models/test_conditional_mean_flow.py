@@ -2,7 +2,11 @@ import torch
 from torch import nn
 from torch.nn.utils import parametrize
 
+from src.models.components.conditional_flow_matching_unet import (
+    ConditionalFlowMatchingUNet,
+)
 from src.models.components.conditional_mean_flow_unet import ConditionalMeanFlowUNet
+from src.models.components.flow_matching_backbone import ConditionalUNetBackbone
 from src.models.components.meanvc_conditioning import CachedConditionEncoder
 from src.models.conditional_mean_flow_module import ConditionalMeanFlowLitModule
 
@@ -70,6 +74,13 @@ def test_conditional_mean_flow_shapes_and_structure() -> None:
     assert torch.count_nonzero(velocity[1, :, 10:]) == 0
     assert len(convolutions) == 12
     assert all(parametrize.is_parametrized(module, "weight") for module in convolutions)
+
+
+def test_flow_matching_unets_share_only_the_backbone() -> None:
+    """测试 B1 与 B2 是共享主干的平级实现。"""
+    assert issubclass(ConditionalFlowMatchingUNet, ConditionalUNetBackbone)
+    assert issubclass(ConditionalMeanFlowUNet, ConditionalUNetBackbone)
+    assert not issubclass(ConditionalMeanFlowUNet, ConditionalFlowMatchingUNet)
 
 
 def test_conditional_mean_flow_time_intervals_are_ordered() -> None:
