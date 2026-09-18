@@ -11,7 +11,6 @@ import torch.nn.functional as F
 from torch import nn
 from torch.nn.utils.parametrizations import weight_norm
 
-
 # ====================
 # 2. Shared Layers
 # ====================
