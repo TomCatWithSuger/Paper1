@@ -7,7 +7,7 @@ import torch
 from lightning.pytorch.utilities.types import LRSchedulerTypeUnion
 from torch.optim import Optimizer
 
-from src.models.conditional_flow_matching_module import ConditionalFlowMatchingLitModule
+from src.models.voice_flow_module_base import VoiceFlowLitModuleBase
 
 
 class ConditionalMeanFlowNetwork(Protocol):
@@ -36,8 +36,8 @@ class ConditionalMeanFlowNetwork(Protocol):
     ) -> torch.Tensor: ...
 
 
-class ConditionalMeanFlowLitModule(ConditionalFlowMatchingLitModule):
-    """仅将 B1 的普通 Flow Matching 目标替换为 MeanFlow 目标。"""
+class ConditionalMeanFlowLitModule(VoiceFlowLitModuleBase):
+    """训练和评估独立的条件 MeanFlow 实验。"""
 
     _TEST_SEED_OFFSET = 1_000_000_000
 
@@ -202,6 +202,28 @@ class ConditionalMeanFlowLitModule(ConditionalFlowMatchingLitModule):
         )
         self.test_loss(loss)
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
+
+    def predict_step(
+        self,
+        batch: Mapping[str, Any],
+        batch_idx: int,
+        dataloader_idx: int = 0,
+    ) -> torch.Tensor:
+        """根据源内容和参考说话人条件一步生成目标 Mel。"""
+        source_mask, content_features, content_lengths, speaker_features = self._inference_data(
+            batch
+        )
+        condition = self.encode_condition(
+            content_features=content_features,
+            content_lengths=content_lengths,
+            speaker_features=speaker_features,
+            target_mask=source_mask,
+        )
+        return self.mean_flow_net.sample(
+            condition=condition,
+            target_mask=source_mask,
+        )
+
 
 if __name__ == "__main__":
     pass

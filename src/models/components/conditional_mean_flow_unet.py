@@ -20,7 +20,7 @@ class ConditionalMeanFlowUNet(ConditionalUNetBackbone):
         time_embedding_dim: int = 128,
         kernel_size: int = 3,
     ) -> None:
-        """初始化与 B1 相同的卷积主干及额外区间嵌入。"""
+        """初始化卷积主干和区间时间嵌入。"""
         super().__init__(
             n_mels=n_mels,
             condition_dim=condition_dim,
