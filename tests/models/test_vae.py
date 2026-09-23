@@ -1,6 +1,6 @@
 import torch
 
-from src.models.components.dense_vae import DenseVAE
+from src.models.legacy.dense_vae import DenseVAE
 from src.models.vae_module import VAELitModule
 
 

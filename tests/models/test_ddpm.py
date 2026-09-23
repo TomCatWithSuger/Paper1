@@ -1,7 +1,7 @@
 import torch
 
-from src.models.components.dense_ddpm import DenseDDPM
 from src.models.ddpm_module import DDPMLitModule
+from src.models.legacy.dense_ddpm import DenseDDPM
 
 
 def test_dense_ddpm_shapes() -> None:

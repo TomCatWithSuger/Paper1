@@ -1,7 +1,7 @@
 import torch
 
-from src.models.components.dense_flow_matching import DenseFlowMatching
 from src.models.flow_matching_module import FlowMatchingLitModule
+from src.models.legacy.dense_flow_matching import DenseFlowMatching
 
 
 def test_dense_flow_matching_shapes() -> None:

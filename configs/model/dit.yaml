@@ -12,7 +12,7 @@ scheduler:
   T_max: 100
 
 net:
-  _target_: src.models.components.dit.DiT1D
+  _target_: src.models.legacy.dit.DiT1D
   in_channels: 1
   hidden_dim: 256
   context_dim: 64

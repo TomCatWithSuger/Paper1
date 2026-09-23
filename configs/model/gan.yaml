@@ -15,7 +15,7 @@ discriminator_optimizer:
   weight_decay: 0.0
 
 net:
-  _target_: src.models.components.dense_gan.DenseGAN
+  _target_: src.models.legacy.dense_gan.DenseGAN
   input_shape: [1, 28, 28]
   latent_dim: 100
   generator_hidden_dims: [256, 512, 1024]

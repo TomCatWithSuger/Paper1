@@ -1,7 +1,7 @@
 import torch
 
-from src.models.components.dense_gan import DenseGAN
 from src.models.gan_module import GANLitModule
+from src.models.legacy.dense_gan import DenseGAN
 
 
 def test_dense_gan_shapes() -> None:

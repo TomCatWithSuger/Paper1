@@ -14,7 +14,7 @@ scheduler:
   patience: 10
 
 net:
-  _target_: src.models.components.dense_score_model.DenseScoreModel
+  _target_: src.models.legacy.dense_score_model.DenseScoreModel
   input_shape: [1, 28, 28]
   hidden_dims: [512, 512, 256]
   noise_embedding_dim: 64

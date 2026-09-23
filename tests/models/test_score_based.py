@@ -1,6 +1,6 @@
 import torch
 
-from src.models.components.dense_score_model import DenseScoreModel
+from src.models.legacy.dense_score_model import DenseScoreModel
 from src.models.score_based_module import ScoreBasedLitModule
 
 
