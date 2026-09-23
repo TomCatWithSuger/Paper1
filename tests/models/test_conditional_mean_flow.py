@@ -22,7 +22,11 @@ def _network() -> ConditionalMeanFlowUNet:
     )
 
 
-def _module(equal_time_probability: float = 0.75) -> ConditionalMeanFlowLitModule:
+def _module(
+    equal_time_probability: float = 0.75,
+    validation_sampling_count: int = 4,
+    test_sampling_count: int = 8,
+) -> ConditionalMeanFlowLitModule:
     """创建用于测试的完整 B2 模块。"""
     return ConditionalMeanFlowLitModule(
         net=_network(),
@@ -34,6 +38,8 @@ def _module(equal_time_probability: float = 0.75) -> ConditionalMeanFlowLitModul
         optimizer=lambda params: torch.optim.Adam(params, lr=1e-3),
         scheduler=None,
         equal_time_probability=equal_time_probability,
+        validation_sampling_count=validation_sampling_count,
+        test_sampling_count=test_sampling_count,
     )
 
 
@@ -121,8 +127,10 @@ def test_conditional_mean_flow_equal_endpoints_reduce_to_velocity(monkeypatch) -
         batch_size: int,
         device: torch.device,
         dtype: torch.dtype,
+        generator: torch.Generator | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         assert batch_size == fixed_times.size(0)
+        assert generator is None
         times = fixed_times.to(device=device, dtype=dtype)
         return times, times
 
@@ -150,6 +158,32 @@ def test_conditional_mean_flow_model_step_backward() -> None:
         for parameter in module.parameters()
         if parameter.grad is not None
     )
+
+
+def test_conditional_mean_flow_fixed_evaluation_sampling() -> None:
+    """测试验证采样不受全局随机状态影响。"""
+    module = _module()
+    module.eval()
+    batch = _batch()
+
+    first_loss = module._evaluation_loss(
+        batch=batch,
+        batch_idx=2,
+        sampling_count=module.validation_sampling_count,
+        seed_offset=0,
+    )
+    torch.manual_seed(999)
+    _ = torch.randn(100)
+    second_loss = module._evaluation_loss(
+        batch=batch,
+        batch_idx=2,
+        sampling_count=module.validation_sampling_count,
+        seed_offset=0,
+    )
+
+    assert module.validation_sampling_count == 4
+    assert module.test_sampling_count == 8
+    assert torch.equal(first_loss, second_loss)
 
 
 def test_conditional_mean_flow_one_step_sample(monkeypatch) -> None:

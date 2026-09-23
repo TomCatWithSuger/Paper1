@@ -8,6 +8,9 @@ optimizer:
 scheduler: null
 
 equal_time_probability: 0.75
+validation_sampling_count: 4
+test_sampling_count: 8
+evaluation_seed: 12345
 
 condition_encoder:
   _target_: src.models.components.meanvc_conditioning.CachedConditionEncoder
