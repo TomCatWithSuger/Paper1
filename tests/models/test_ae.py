@@ -1,7 +1,7 @@
 import torch
 
 from src.models.ae_module import AELitModule
-from src.models.components.dense_autoencoder import DenseAutoencoder
+from src.models.legacy.dense_autoencoder import DenseAutoencoder
 
 
 def test_dense_autoencoder_shapes() -> None:

@@ -8,7 +8,11 @@ from src.models.components.conditional_flow_matching_unet import (
 from src.models.components.conditional_mean_flow_unet import ConditionalMeanFlowUNet
 from src.models.components.flow_matching_backbone import ConditionalUNetBackbone
 from src.models.components.meanvc_conditioning import CachedConditionEncoder
+from src.models.components.meanvoiceflow_unet import MeanVoiceFlowUNet
+from src.models.conditional_flow_matching_module import ConditionalFlowMatchingLitModule
 from src.models.conditional_mean_flow_module import ConditionalMeanFlowLitModule
+from src.models.meanvoiceflow_module import MeanVoiceFlowLitModule
+from src.models.voice_flow_module_base import VoiceFlowLitModuleBase
 
 
 def _network() -> ConditionalMeanFlowUNet:
@@ -22,7 +26,11 @@ def _network() -> ConditionalMeanFlowUNet:
     )
 
 
-def _module(equal_time_probability: float = 0.75) -> ConditionalMeanFlowLitModule:
+def _module(
+    equal_time_probability: float = 0.75,
+    validation_sampling_count: int = 4,
+    test_sampling_count: int = 8,
+) -> ConditionalMeanFlowLitModule:
     """创建用于测试的完整 B2 模块。"""
     return ConditionalMeanFlowLitModule(
         net=_network(),
@@ -34,6 +42,8 @@ def _module(equal_time_probability: float = 0.75) -> ConditionalMeanFlowLitModul
         optimizer=lambda params: torch.optim.Adam(params, lr=1e-3),
         scheduler=None,
         equal_time_probability=equal_time_probability,
+        validation_sampling_count=validation_sampling_count,
+        test_sampling_count=test_sampling_count,
     )
 
 
@@ -77,10 +87,23 @@ def test_conditional_mean_flow_shapes_and_structure() -> None:
 
 
 def test_flow_matching_unets_share_only_the_backbone() -> None:
-    """测试 B1 与 B2 是共享主干的平级实现。"""
+    """测试三个实验网络是共享中立主干的平级实现。"""
     assert issubclass(ConditionalFlowMatchingUNet, ConditionalUNetBackbone)
     assert issubclass(ConditionalMeanFlowUNet, ConditionalUNetBackbone)
+    assert issubclass(MeanVoiceFlowUNet, ConditionalUNetBackbone)
     assert not issubclass(ConditionalMeanFlowUNet, ConditionalFlowMatchingUNet)
+    assert not issubclass(MeanVoiceFlowUNet, ConditionalFlowMatchingUNet)
+    assert not issubclass(MeanVoiceFlowUNet, ConditionalMeanFlowUNet)
+
+
+def test_voice_flow_lightning_modules_are_independent() -> None:
+    """测试 B1、B2、B3 只共享中立基础层。"""
+    assert issubclass(ConditionalFlowMatchingLitModule, VoiceFlowLitModuleBase)
+    assert issubclass(ConditionalMeanFlowLitModule, VoiceFlowLitModuleBase)
+    assert issubclass(MeanVoiceFlowLitModule, VoiceFlowLitModuleBase)
+    assert not issubclass(ConditionalMeanFlowLitModule, ConditionalFlowMatchingLitModule)
+    assert not issubclass(MeanVoiceFlowLitModule, ConditionalMeanFlowLitModule)
+    assert not issubclass(MeanVoiceFlowLitModule, ConditionalFlowMatchingLitModule)
 
 
 def test_conditional_mean_flow_time_intervals_are_ordered() -> None:
@@ -121,8 +144,10 @@ def test_conditional_mean_flow_equal_endpoints_reduce_to_velocity(monkeypatch) -
         batch_size: int,
         device: torch.device,
         dtype: torch.dtype,
+        generator: torch.Generator | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         assert batch_size == fixed_times.size(0)
+        assert generator is None
         times = fixed_times.to(device=device, dtype=dtype)
         return times, times
 
@@ -150,6 +175,32 @@ def test_conditional_mean_flow_model_step_backward() -> None:
         for parameter in module.parameters()
         if parameter.grad is not None
     )
+
+
+def test_conditional_mean_flow_fixed_evaluation_sampling() -> None:
+    """测试验证采样不受全局随机状态影响。"""
+    module = _module()
+    module.eval()
+    batch = _batch()
+
+    first_loss = module._evaluation_loss(
+        batch=batch,
+        batch_idx=2,
+        sampling_count=module.validation_sampling_count,
+        seed_offset=0,
+    )
+    torch.manual_seed(999)
+    _ = torch.randn(100)
+    second_loss = module._evaluation_loss(
+        batch=batch,
+        batch_idx=2,
+        sampling_count=module.validation_sampling_count,
+        seed_offset=0,
+    )
+
+    assert module.validation_sampling_count == 4
+    assert module.test_sampling_count == 8
+    assert torch.equal(first_loss, second_loss)
 
 
 def test_conditional_mean_flow_one_step_sample(monkeypatch) -> None:

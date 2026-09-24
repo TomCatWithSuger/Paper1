@@ -1,16 +1,20 @@
-_target_: src.models.conditional_mean_flow_module.ConditionalMeanFlowLitModule
+_target_: src.models.meanvoiceflow_module.MeanVoiceFlowLitModule
 
 optimizer:
   _target_: torch.optim.Adam
   _partial_: true
   lr: 0.0002
+  betas: [0.5, 0.9]
 
 scheduler: null
 
 equal_time_probability: 0.75
-validation_sampling_count: 4
-test_sampling_count: 8
-evaluation_seed: 12345
+conditional_input_probability: 0.5
+zero_reconstruction_weight: 1.0
+zero_reconstruction_margin: 0.3
+adaptive_loss_epsilon: 1.0e-3
+inference_source_diffusion_time: 0.95
+warmup_steps: 10000
 
 condition_encoder:
   _target_: src.models.components.meanvc_conditioning.CachedConditionEncoder
@@ -19,7 +23,7 @@ condition_encoder:
   output_dim: 128
 
 net:
-  _target_: src.models.components.conditional_mean_flow_unet.ConditionalMeanFlowUNet
+  _target_: src.models.components.meanvoiceflow_unet.MeanVoiceFlowUNet
   n_mels: 80
   condition_dim: 128
   hidden_channels: 512

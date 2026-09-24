@@ -1,7 +1,7 @@
 import torch
 
-from src.models.components.dit import DiT1D
 from src.models.dit_module import DiTLitModule
+from src.models.legacy.dit import DiT1D
 
 
 def test_dit_shapes() -> None:

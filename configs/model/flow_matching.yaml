@@ -14,7 +14,7 @@ scheduler:
   patience: 10
 
 net:
-  _target_: src.models.components.dense_flow_matching.DenseFlowMatching
+  _target_: src.models.legacy.dense_flow_matching.DenseFlowMatching
   input_shape: [1, 28, 28]
   hidden_dims: [512, 512, 256]
   time_embedding_dim: 64

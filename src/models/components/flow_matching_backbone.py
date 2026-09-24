@@ -98,7 +98,7 @@ class GatedConvTranspose1d(nn.Module):
 
 
 class ConditionalUNetBackbone(nn.Module):
-    """B1 与 B2 共用的 FastVoiceGrad 风格条件 U-Net 主干。"""
+    """条件语音流网络共用的 FastVoiceGrad 风格 U-Net 主干。"""
 
     def __init__(
         self,

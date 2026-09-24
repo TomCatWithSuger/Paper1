@@ -1,6 +1,6 @@
 import torch
 
-from src.models.components.unet_1d import UNet1D
+from src.models.legacy.unet_1d import UNet1D
 from src.models.unet_module import UNetLitModule
 
 
