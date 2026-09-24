@@ -19,7 +19,6 @@ from torch.optim.lr_scheduler import LambdaLR
 
 from src.models.voice_flow_module_base import VoiceFlowLitModuleBase
 
-
 # ====================
 # 2. 定义
 # ====================
@@ -230,12 +229,8 @@ class MeanVoiceFlowLitModule(VoiceFlowLitModuleBase):
         valid = mask.unsqueeze(1).expand_as(target)
         positive_infinity = torch.full_like(target, torch.inf)
         negative_infinity = torch.full_like(target, -torch.inf)
-        target_min = torch.where(valid, target, positive_infinity).amin(
-            dim=(1, 2), keepdim=True
-        )
-        target_max = torch.where(valid, target, negative_infinity).amax(
-            dim=(1, 2), keepdim=True
-        )
+        target_min = torch.where(valid, target, positive_infinity).amin(dim=(1, 2), keepdim=True)
+        target_max = torch.where(valid, target, negative_infinity).amax(dim=(1, 2), keepdim=True)
         target_range = (target_max - target_min).clamp_min(1e-6)
         normalized_prediction = (prediction - target_min) / target_range
         normalized_target = (target - target_min) / target_range

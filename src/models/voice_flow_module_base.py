@@ -14,7 +14,6 @@ from lightning.pytorch.utilities.types import LRSchedulerTypeUnion, OptimizerLRS
 from torch.optim import Optimizer
 from torchmetrics import MeanMetric
 
-
 # ====================
 # 2. Definitions
 # ====================

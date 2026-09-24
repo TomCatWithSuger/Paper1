@@ -12,7 +12,6 @@ from src.models.components.flow_matching_backbone import (
     ContinuousTimeEmbedding,
 )
 
-
 # ====================
 # 2. 核心模型
 # ====================
@@ -121,9 +120,8 @@ class MeanVoiceFlowUNet(ConditionalUNetBackbone):
         )
         time_shape = (batch_size,) + (1,) * (source_mels.ndim - 1)
         diffused_source = (
-            (1.0 - diffusion_times.view(time_shape)) * source_mels
-            + diffusion_times.view(time_shape) * noise
-        )
+            1.0 - diffusion_times.view(time_shape)
+        ) * source_mels + diffusion_times.view(time_shape) * noise
         end_times = torch.ones_like(diffusion_times)
         start_times = torch.zeros_like(diffusion_times)
         average_velocity = self.mean_voice_flow(
