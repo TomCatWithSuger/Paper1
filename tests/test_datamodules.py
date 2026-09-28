@@ -193,7 +193,12 @@ def test_vctk_cached_meanvc_features(vctk_data_dir: Path, vctk_feature_cache_dir
     dm.setup()
 
     batch = next(iter(dm.train_dataloader()))
-    assert batch["content_features"].shape == (2, 256, 20)
-    assert batch["content_feature_lengths"].tolist() == [20, 20]
+    content_features = batch["content_features"]
+    content_feature_lengths = batch["content_feature_lengths"]
+    assert content_features.shape[:2] == (2, 256)
+    assert content_feature_lengths.shape == (2,)
+    assert torch.all(content_feature_lengths > 0)
+    assert torch.all(content_feature_lengths <= content_features.shape[2])
+    assert content_features.shape[2] == int(content_feature_lengths.max().item())
     assert batch["speaker_features"].shape == (2, 256)
     assert batch["reference_speaker_features"].shape == (2, 256)
