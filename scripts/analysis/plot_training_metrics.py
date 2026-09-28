@@ -7,10 +7,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.analysis.training_metrics import (  # noqa: E402
-    DEFAULT_METRICS as DEFAULT_METRICS,
-    analyze as analyze,
-)
+from src.analysis.training_metrics import DEFAULT_METRICS as DEFAULT_METRICS  # noqa: E402
+from src.analysis.training_metrics import analyze as analyze
 
 
 def _parser() -> argparse.ArgumentParser:

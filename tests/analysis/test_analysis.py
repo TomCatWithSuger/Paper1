@@ -65,9 +65,7 @@ def test_metric_points_position_fallback() -> None:
 
 
 @pytest.mark.parametrize("explicit_output", [False, True])
-def test_analyze_outputs(
-    metrics_csv: Path, tmp_path: Path, explicit_output: bool
-) -> None:
+def test_analyze_outputs(metrics_csv: Path, tmp_path: Path, explicit_output: bool) -> None:
     output_dir = tmp_path / "training" if explicit_output else None
     chart_path, summary_path = analyze(
         input_path=metrics_csv.parent,
@@ -126,9 +124,7 @@ def test_compare_outputs(
 
 
 @pytest.mark.parametrize("explicit_output", [False, True])
-def test_visualize_npy_uses_sampled_statistics(
-    tmp_path: Path, explicit_output: bool
-) -> None:
+def test_visualize_npy_uses_sampled_statistics(tmp_path: Path, explicit_output: bool) -> None:
     array = np.array([[0, 999, 8, -999, 4], [10, 999, 18, -999, 14]], dtype=np.float32)
     input_path = tmp_path / "sample.npy"
     np.save(input_path, array)

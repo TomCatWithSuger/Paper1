@@ -7,12 +7,10 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.analysis.mel import (  # noqa: E402
-    _load_array as _load_array,
-    _prepare_mel as _prepare_mel,
-    _select_mapping_value as _select_mapping_value,
-    visualize as visualize,
-)
+from src.analysis.mel import _load_array as _load_array  # noqa: E402
+from src.analysis.mel import _prepare_mel as _prepare_mel
+from src.analysis.mel import _select_mapping_value as _select_mapping_value
+from src.analysis.mel import visualize as visualize
 
 
 def _parser() -> argparse.ArgumentParser:
