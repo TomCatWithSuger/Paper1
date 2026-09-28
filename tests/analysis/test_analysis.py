@@ -2,8 +2,7 @@
 
 import csv
 import json
-import os
-import subprocess
+import runpy
 import sys
 from pathlib import Path
 
@@ -191,18 +190,23 @@ def test_cli_entries_use_analysis_api() -> None:
     "script",
     ["plot_training_metrics.py", "compare_experiments.py", "visualize_mel.py"],
 )
-def test_cli_help_from_external_cwd(tmp_path: Path, script: str) -> None:
-    env = os.environ.copy()
-    env.pop("PYTHONPATH", None)
-    result = subprocess.run(
-        [sys.executable, str(PROJECT_ROOT / "scripts" / "analysis" / script), "--help"],
-        cwd=tmp_path,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "--help" in result.stdout
-    assert script in result.stdout
+def test_cli_help_from_external_cwd(
+    tmp_path: Path,
+    script: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    script_path = PROJECT_ROOT / "scripts" / "analysis" / script
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    monkeypatch.setattr(sys, "argv", [str(script_path), "--help"])
+    monkeypatch.setattr(sys, "path", sys.path.copy())
+
+    with pytest.raises(SystemExit) as exit_info:
+        runpy.run_path(str(script_path), run_name="__main__")
+
+    assert exit_info.value.code == 0
+    output = capsys.readouterr()
+    assert "--help" in output.out
+    assert script in output.out
+    assert not output.err
