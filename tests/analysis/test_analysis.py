@@ -11,9 +11,7 @@ import numpy as np
 import pytest
 
 from scripts.analysis import compare_experiments, plot_training_metrics, visualize_mel
-from scripts.analysis import metrics_io as legacy_metrics_io
-from scripts.analysis import svg_utils as legacy_svg_utils
-from src.analysis import metrics_io, svg_utils
+from src.analysis import metrics_io
 from src.analysis.experiment_comparison import compare
 from src.analysis.mel import _prepare_mel, visualize
 from src.analysis.metrics_io import available_metrics, metric_points, summarize_metric
@@ -185,16 +183,12 @@ def test_prepare_mel_checks_finiteness_after_sampling() -> None:
         _prepare_mel(array, 0, False, 5)
 
 
-def test_legacy_exports_keep_business_api() -> None:
+def test_cli_entries_use_analysis_api() -> None:
     assert plot_training_metrics.analyze is analyze
     assert plot_training_metrics.DEFAULT_METRICS is DEFAULT_METRICS
     assert compare_experiments.compare is compare
     assert visualize_mel.visualize is visualize
     assert visualize_mel._prepare_mel is _prepare_mel
-    for name in legacy_metrics_io.__all__:
-        assert getattr(legacy_metrics_io, name) is getattr(metrics_io, name)
-    for name in legacy_svg_utils.__all__:
-        assert getattr(legacy_svg_utils, name) is getattr(svg_utils, name)
 
 
 @pytest.mark.parametrize(
