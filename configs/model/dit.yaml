@@ -1,4 +1,4 @@
-_target_: src.models.dit_module.DiTLitModule
+_target_: src.models.modules.generative.DiTLitModule
 
 optimizer:
   _target_: torch.optim.AdamW
@@ -11,13 +11,15 @@ scheduler:
   _partial_: true
   T_max: 100
 
-net:
-  _target_: src.models.legacy.dit.DiT1D
-  in_channels: 1
-  hidden_dim: 256
-  context_dim: 64
-  num_layers: 4
-  num_heads: 8
+method:
+  _target_: src.models.methods.generative.flow.flow_matching.FlowMatching
   integration_steps: 100
+  network:
+    _target_: src.models.networks.transformer.dit.DiT1D
+    in_channels: 1
+    hidden_dim: 256
+    context_dim: 64
+    num_layers: 4
+    num_heads: 8
 
 compile: false

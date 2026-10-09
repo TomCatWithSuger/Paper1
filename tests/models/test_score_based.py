@@ -1,14 +1,18 @@
 import torch
 
-from src.models.legacy.dense_score_model import DenseScoreModel
-from src.models.score_based_module import ScoreBasedLitModule
+from src.models.methods.generative.diffusion.score_based import ScoreMatching
+from src.models.modules.generative import ScoreBasedLitModule
+from src.models.networks.dense.field import DenseScoreField
 
 
 def test_dense_score_model_shapes() -> None:
-    net = DenseScoreModel(
+    net = DenseScoreField(
         input_shape=(1, 28, 28),
         hidden_dims=(64, 32),
         noise_embedding_dim=16,
+    )
+    method = ScoreMatching(
+        net,
         sigma_min=0.1,
         sigma_max=1.0,
         num_noise_levels=4,
@@ -19,9 +23,9 @@ def test_dense_score_model_shapes() -> None:
     noise = torch.randn_like(data)
     noise_levels = torch.tensor([0.1, 0.2, 0.5, 1.0])
 
-    noisy_samples = net.perturb(data, noise_levels, noise)
+    noisy_samples = method.perturb(data, noise_levels, noise)
     predicted_score = net(noisy_samples, noise_levels)
-    samples = net.sample(2, device=data.device, steps_per_level=1)
+    samples = method.sample(2, device=data.device, steps_per_level=1)
 
     assert noisy_samples.shape == data.shape
     assert predicted_score.shape == data.shape
@@ -30,10 +34,13 @@ def test_dense_score_model_shapes() -> None:
 
 
 def test_score_based_model_step() -> None:
-    net = DenseScoreModel(
+    net = DenseScoreField(
         input_shape=(1, 28, 28),
         hidden_dims=(64, 32),
         noise_embedding_dim=16,
+    )
+    method = ScoreMatching(
+        net,
         sigma_min=0.1,
         sigma_max=1.0,
         num_noise_levels=4,
@@ -41,7 +48,7 @@ def test_score_based_model_step() -> None:
         sampling_step_size=1e-4,
     )
     module = ScoreBasedLitModule(
-        net=net,
+        method=method,
         optimizer=lambda params: torch.optim.Adam(params, lr=1e-3),
         scheduler=None,
     )

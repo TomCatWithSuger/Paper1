@@ -1,4 +1,5 @@
 # @package _global_
+# B1：普通条件 Flow Matching 基线，学习瞬时速度并使用多步 Euler 生成。
 
 defaults:
   - override /data: vctk

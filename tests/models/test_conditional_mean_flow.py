@@ -1,28 +1,30 @@
 import torch
+from lightning import LightningModule
 from torch import nn
 from torch.nn.utils import parametrize
 
-from src.models.components.conditional_flow_matching_unet import (
-    ConditionalFlowMatchingUNet,
+from src.models.components.conditioning.meanvc import CachedConditionEncoder
+from src.models.methods.base import VoiceMethod
+from src.models.methods.generative.flow.cfm.conditional_flow_matching import (
+    ConditionalFlowMatching,
 )
-from src.models.components.conditional_mean_flow_unet import ConditionalMeanFlowUNet
-from src.models.components.flow_matching_backbone import ConditionalUNetBackbone
-from src.models.components.meanvc_conditioning import CachedConditionEncoder
-from src.models.components.meanvoiceflow_unet import MeanVoiceFlowUNet
-from src.models.conditional_flow_matching_module import ConditionalFlowMatchingLitModule
-from src.models.conditional_mean_flow_module import ConditionalMeanFlowLitModule
-from src.models.meanvoiceflow_module import MeanVoiceFlowLitModule
-from src.models.voice_flow_module_base import VoiceFlowLitModuleBase
+from src.models.methods.generative.flow.mean_flow.conditional_mean_flow import (
+    ConditionalMeanFlow,
+)
+from src.models.methods.generative.flow.mean_flow.meanvoiceflow import MeanVoiceFlow
+from src.models.modules.voice_flow_module import VoiceFlowModule
+from src.models.networks.unet.conditional import ConditionalUNetBackbone, UNet
 
 
-def _network() -> ConditionalMeanFlowUNet:
+def _network() -> UNet:
     """创建用于测试的小型 MeanFlow U-Net。"""
-    return ConditionalMeanFlowUNet(
+    return UNet(
         n_mels=8,
         condition_dim=8,
         hidden_channels=16,
         time_embedding_dim=8,
         kernel_size=3,
+        time_fields=("time", "interval"),
     )
 
 
@@ -30,18 +32,16 @@ def _module(
     equal_time_probability: float = 0.75,
     validation_sampling_count: int = 4,
     test_sampling_count: int = 8,
-) -> ConditionalMeanFlowLitModule:
+) -> VoiceFlowModule:
     """创建用于测试的完整 B2 模块。"""
-    return ConditionalMeanFlowLitModule(
-        net=_network(),
-        condition_encoder=CachedConditionEncoder(
-            content_dim=8,
-            speaker_dim=8,
-            output_dim=8,
+    return VoiceFlowModule(
+        method=ConditionalMeanFlow(
+            _network(),
+            CachedConditionEncoder(content_dim=8, speaker_dim=8, output_dim=8),
+            equal_time_probability=equal_time_probability,
         ),
         optimizer=lambda params: torch.optim.Adam(params, lr=1e-3),
         scheduler=None,
-        equal_time_probability=equal_time_probability,
         validation_sampling_count=validation_sampling_count,
         test_sampling_count=test_sampling_count,
     )
@@ -64,12 +64,13 @@ def _batch() -> dict[str, torch.Tensor]:
 def test_conditional_mean_flow_shapes_and_structure() -> None:
     """测试双时间接口和保持不变的 12 层卷积主干。"""
     net = _network()
+    method = ConditionalMeanFlow(net, CachedConditionEncoder(8, 8, 8))
     states = torch.randn(2, 8, 13)
     condition = torch.randn(2, 8, 13)
     target_mask = torch.ones(2, 13, dtype=torch.bool)
     target_mask[1, 10:] = False
 
-    velocity = net.mean_flow(
+    velocity = method(
         noisy_mels=states,
         start_times=torch.tensor([0.1, 0.4]),
         end_times=torch.tensor([0.5, 0.9]),
@@ -88,27 +89,34 @@ def test_conditional_mean_flow_shapes_and_structure() -> None:
 
 def test_flow_matching_unets_share_only_the_backbone() -> None:
     """测试三个实验网络是共享中立主干的平级实现。"""
-    assert issubclass(ConditionalFlowMatchingUNet, ConditionalUNetBackbone)
-    assert issubclass(ConditionalMeanFlowUNet, ConditionalUNetBackbone)
-    assert issubclass(MeanVoiceFlowUNet, ConditionalUNetBackbone)
-    assert not issubclass(ConditionalMeanFlowUNet, ConditionalFlowMatchingUNet)
-    assert not issubclass(MeanVoiceFlowUNet, ConditionalFlowMatchingUNet)
-    assert not issubclass(MeanVoiceFlowUNet, ConditionalMeanFlowUNet)
+    assert issubclass(UNet, ConditionalUNetBackbone)
+    for fields in (("time",), ("time", "interval"), ("time", "interval", "source_time")):
+        network = UNet(8, 8, 16, 8, time_fields=fields)
+        assert type(network) is UNet
+        assert not hasattr(network, "sample")
+        assert not hasattr(network, "interpolate")
+        assert network.time_fields == fields
 
 
 def test_voice_flow_lightning_modules_are_independent() -> None:
-    """测试 B1、B2、B3 只共享中立基础层。"""
-    assert issubclass(ConditionalFlowMatchingLitModule, VoiceFlowLitModuleBase)
-    assert issubclass(ConditionalMeanFlowLitModule, VoiceFlowLitModuleBase)
-    assert issubclass(MeanVoiceFlowLitModule, VoiceFlowLitModuleBase)
-    assert not issubclass(ConditionalMeanFlowLitModule, ConditionalFlowMatchingLitModule)
-    assert not issubclass(MeanVoiceFlowLitModule, ConditionalMeanFlowLitModule)
-    assert not issubclass(MeanVoiceFlowLitModule, ConditionalFlowMatchingLitModule)
+    """测试 B1、B2、B3 共享训练入口但使用平级方法。"""
+    assert issubclass(VoiceFlowModule, LightningModule)
+    assert all(
+        issubclass(method, VoiceMethod)
+        for method in (
+            ConditionalFlowMatching,
+            ConditionalMeanFlow,
+            MeanVoiceFlow,
+        )
+    )
+    assert not issubclass(ConditionalMeanFlow, ConditionalFlowMatching)
+    assert not issubclass(MeanVoiceFlow, ConditionalMeanFlow)
+    assert not issubclass(MeanVoiceFlow, ConditionalFlowMatching)
 
 
 def test_conditional_mean_flow_time_intervals_are_ordered() -> None:
     """测试训练时间满足 ``0 <= r <= t <= 1``。"""
-    start_times, end_times = _module()._sample_time_intervals(
+    start_times, end_times = _module().method._sample_time_intervals(
         batch_size=128,
         device=torch.device("cpu"),
         dtype=torch.float32,
@@ -122,7 +130,7 @@ def test_conditional_mean_flow_time_intervals_are_ordered() -> None:
 def test_conditional_mean_flow_equal_time_ratio() -> None:
     """测试约 75% 样本使用 ``r=t``，其余样本使用 ``r<t``。"""
     torch.manual_seed(123)
-    start_times, end_times = _module()._sample_time_intervals(
+    start_times, end_times = _module().method._sample_time_intervals(
         batch_size=20_000,
         device=torch.device("cpu"),
         dtype=torch.float32,
@@ -151,7 +159,7 @@ def test_conditional_mean_flow_equal_endpoints_reduce_to_velocity(monkeypatch) -
         times = fixed_times.to(device=device, dtype=dtype)
         return times, times
 
-    monkeypatch.setattr(module, "_sample_time_intervals", fixed_intervals)
+    monkeypatch.setattr(module.method, "_sample_time_intervals", fixed_intervals)
 
     _, _, target_velocity, path_samples = module.model_step(batch)
     expected_velocity = 2.0 * (path_samples - target_mels)
@@ -205,21 +213,21 @@ def test_conditional_mean_flow_fixed_evaluation_sampling() -> None:
 
 def test_conditional_mean_flow_one_step_sample(monkeypatch) -> None:
     """测试推理仅按 ``x_0=x_1-u(x_1,0,1,h)`` 更新一次。"""
-    net = _network()
+    method = _module().method
     condition = torch.randn(2, 8, 9)
     target_mask = torch.ones(2, 9, dtype=torch.bool)
     calls = 0
 
-    def constant_velocity(**kwargs) -> torch.Tensor:
+    def constant_velocity(noisy_mels, *args, **kwargs) -> torch.Tensor:
         nonlocal calls
         calls += 1
-        return torch.ones_like(kwargs["noisy_mels"])
+        return torch.ones_like(noisy_mels)
 
-    monkeypatch.setattr(net, "mean_flow", constant_velocity)
+    monkeypatch.setattr(method, "forward", constant_velocity)
     torch.manual_seed(123)
     initial_noise = torch.randn(2, 8, 9)
     torch.manual_seed(123)
-    generated = net.sample(condition=condition, target_mask=target_mask)
+    generated = method.sample(condition=condition, target_mask=target_mask)
 
     assert calls == 1
     assert torch.allclose(generated, initial_noise - 1.0)

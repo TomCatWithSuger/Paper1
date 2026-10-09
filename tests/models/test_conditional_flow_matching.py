@@ -2,15 +2,14 @@ import torch
 from torch import nn
 from torch.nn.utils import parametrize
 
-from src.models.components.conditional_flow_matching import (
-    ConditionalFlowMatchingTransformer,
+from src.models.components.conditioning.meanvc import CachedConditionEncoder
+from src.models.components.embeddings.continuous_time import ContinuousTimeEmbedding
+from src.models.methods.generative.flow.cfm.conditional_flow_matching import (
+    ConditionalFlowMatching,
 )
-from src.models.components.conditional_flow_matching_unet import (
-    ConditionalFlowMatchingUNet,
-)
-from src.models.components.flow_matching_backbone import ContinuousTimeEmbedding
-from src.models.components.meanvc_conditioning import CachedConditionEncoder
-from src.models.conditional_flow_matching_module import ConditionalFlowMatchingLitModule
+from src.models.modules.voice_flow_module import VoiceFlowModule
+from src.models.networks.transformer.conditional import Transformer
+from src.models.networks.unet.conditional import UNet
 
 
 def _condition_encoder() -> CachedConditionEncoder:
@@ -22,23 +21,21 @@ def _condition_encoder() -> CachedConditionEncoder:
     )
 
 
-def _network() -> ConditionalFlowMatchingUNet:
+def _network() -> UNet:
     """创建用于测试的小型条件 Flow Matching U-Net。"""
-    return ConditionalFlowMatchingUNet(
+    return UNet(
         n_mels=8,
         condition_dim=8,
         hidden_channels=16,
         time_embedding_dim=8,
         kernel_size=3,
-        integration_steps=2,
     )
 
 
-def _module() -> ConditionalFlowMatchingLitModule:
+def _module() -> VoiceFlowModule:
     """创建用于测试的完整条件 Flow Matching 基线。"""
-    return ConditionalFlowMatchingLitModule(
-        net=_network(),
-        condition_encoder=_condition_encoder(),
+    return VoiceFlowModule(
+        method=ConditionalFlowMatching(_network(), _condition_encoder(), integration_steps=2),
         optimizer=lambda params: torch.optim.Adam(params, lr=1e-3),
         scheduler=None,
     )
@@ -85,12 +82,13 @@ def test_conditional_flow_matching_shapes() -> None:
 
     velocity = net(
         noisy_mels=target,
-        times=times,
+        times={"time": times},
         condition=condition,
         target_mask=target_mask,
     )
-    interpolated = net.interpolate(target, torch.zeros_like(target), times)
-    generated = net.sample(
+    method = ConditionalFlowMatching(net, _condition_encoder(), integration_steps=2)
+    interpolated = method.interpolate(target, torch.zeros_like(target), times)
+    generated = method.sample(
         condition=condition,
         target_mask=target_mask,
         integration_steps=2,
@@ -120,18 +118,17 @@ def test_conditional_flow_matching_unet_structure() -> None:
 
 def test_conditional_flow_matching_transformer_is_preserved() -> None:
     """测试原 Transformer 速度场仍可通过统一条件接口使用。"""
-    net = ConditionalFlowMatchingTransformer(
+    net = Transformer(
         n_mels=8,
         hidden_dim=16,
         condition_dim=8,
         num_layers=1,
         num_heads=2,
-        integration_steps=2,
     )
     noisy_mels = torch.randn(2, 8, 12)
     condition = torch.randn(2, 8, 12)
 
-    velocity = net(noisy_mels, torch.rand(2), condition)
+    velocity = net(noisy_mels, {"time": torch.rand(2)}, condition)
 
     assert velocity.shape == noisy_mels.shape
 

@@ -1,4 +1,4 @@
-_target_: src.models.vae_module.VAELitModule
+_target_: src.models.modules.reconstruction.VAELitModule
 
 optimizer:
   _target_: torch.optim.Adam
@@ -13,11 +13,12 @@ scheduler:
   factor: 0.1
   patience: 10
 
-net:
-  _target_: src.models.legacy.dense_vae.DenseVAE
-  input_shape: [1, 28, 28]
-  hidden_dims: [512, 256]
-  latent_dim: 32
-
-beta: 1.0
+method:
+  _target_: src.models.methods.generative.latent_variable.vae.VariationalAutoencoder
+  beta: 1.0
+  network:
+    _target_: src.models.networks.dense.autoencoder.DenseGaussianAutoencoder
+    input_shape: [1, 28, 28]
+    hidden_dims: [512, 256]
+    latent_dim: 32
 compile: false

@@ -155,6 +155,31 @@ uv run pytest
 uv run pre-commit run --all-files
 ```
 
+### Docstring 原则
+
+`interrogate`要求公共 API 的 docstring 覆盖率不低于 80%。本项目只为代码本身无法完整表达的职责、输入输出契约和特殊行为编写简短 docstring，避免为了覆盖率重复描述函数名和下一行代码。
+
+应该编写 docstring：
+
+- 公共的 Component、Network、Method、Module 和数据结构类；
+- 独立公共函数；
+- `compute_loss()`、`sample()` 等返回内容或行为不直观的算法接口；
+- 具有特殊优化、评估或检查点兼容行为的接口。
+
+通常不需要编写 docstring：
+
+- `tests/` 中名称已经明确表达意图的测试函数；
+- `_helper()` 等私有实现和魔术方法；
+- 简单属性访问器；
+- `forward()`、`training_step()`、`setup()` 等没有额外约束的标准框架钩子。
+
+因此 [`.pre-commit-config.yaml`](.pre-commit-config.yaml) 会排除测试和内部实现，并忽略部分标准框架接口，但仍检查公共类、独立函数及算法损失和采样接口。docstring 应保持简洁，例如：
+
+```python
+class ClassificationLitModule(LightningModule):
+"""管理可配置类别数的多分类训练与指标。"""
+```
+
 ## Git commit message format
 
 提交消息建议遵循 Conventional Commits 格式：

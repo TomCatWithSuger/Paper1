@@ -1,4 +1,4 @@
-_target_: src.models.flow_matching_module.FlowMatchingLitModule
+_target_: src.models.modules.generative.FlowMatchingLitModule
 
 optimizer:
   _target_: torch.optim.Adam
@@ -13,11 +13,13 @@ scheduler:
   factor: 0.5
   patience: 10
 
-net:
-  _target_: src.models.legacy.dense_flow_matching.DenseFlowMatching
-  input_shape: [1, 28, 28]
-  hidden_dims: [512, 512, 256]
-  time_embedding_dim: 64
+method:
+  _target_: src.models.methods.generative.flow.flow_matching.FlowMatching
   integration_steps: 100
+  network:
+    _target_: src.models.networks.dense.field.DenseTimeField
+    input_shape: [1, 28, 28]
+    hidden_dims: [512, 512, 256]
+    time_embedding_dim: 64
 
 compile: false

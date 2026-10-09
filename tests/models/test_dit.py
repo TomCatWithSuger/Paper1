@@ -1,7 +1,8 @@
 import torch
 
-from src.models.dit_module import DiTLitModule
-from src.models.legacy.dit import DiT1D
+from src.models.methods.generative.flow.flow_matching import FlowMatching
+from src.models.modules.generative import DiTLitModule
+from src.models.networks.transformer.dit import DiT1D
 
 
 def test_dit_shapes() -> None:
@@ -11,14 +12,16 @@ def test_dit_shapes() -> None:
         context_dim=16,
         num_layers=1,
         num_heads=2,
-        integration_steps=4,
     )
     x = torch.randn(2, 320, 1)
     times = torch.rand(2)
     velocity = net(x, times)
 
     assert velocity.shape == x.shape
-    assert net.sample(320, device="cpu", integration_steps=2).shape == (320, 1)
+    assert FlowMatching(net, 4).sample_waveform(320, device="cpu", integration_steps=2).shape == (
+        320,
+        1,
+    )
 
 
 def test_dit_model_step() -> None:
@@ -28,10 +31,9 @@ def test_dit_model_step() -> None:
         context_dim=16,
         num_layers=1,
         num_heads=2,
-        integration_steps=4,
     )
     module = DiTLitModule(
-        net=net,
+        method=FlowMatching(net, 4),
         optimizer=lambda params: torch.optim.Adam(params, lr=1e-3),
         scheduler=None,
     )

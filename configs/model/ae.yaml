@@ -1,4 +1,4 @@
-_target_: src.models.ae_module.AELitModule
+_target_: src.models.modules.reconstruction.AELitModule
 
 optimizer:
   _target_: torch.optim.Adam
@@ -13,10 +13,12 @@ scheduler:
   factor: 0.1
   patience: 10
 
-net:
-  _target_: src.models.legacy.dense_autoencoder.DenseAutoencoder
-  input_shape: [1, 28, 28]
-  hidden_dims: [512, 256]
-  latent_dim: 32
+method:
+  _target_: src.models.methods.representation.autoencoder.Autoencoder
+  network:
+    _target_: src.models.networks.dense.autoencoder.DenseAutoencoder
+    input_shape: [1, 28, 28]
+    hidden_dims: [512, 256]
+    latent_dim: 32
 
 compile: false

@@ -1,4 +1,4 @@
-_target_: src.models.conditional_flow_matching_module.ConditionalFlowMatchingLitModule
+_target_: src.models.modules.voice_flow_module.VoiceFlowModule
 
 optimizer:
   _target_: torch.optim.Adam
@@ -7,19 +7,21 @@ optimizer:
 
 scheduler: null
 
-condition_encoder:
-  _target_: src.models.components.meanvc_conditioning.CachedConditionEncoder
-  content_dim: 256
-  speaker_dim: 256
-  output_dim: 128
-
-net:
-  _target_: src.models.components.conditional_flow_matching_unet.ConditionalFlowMatchingUNet
-  n_mels: 80
-  condition_dim: 128
-  hidden_channels: 512
-  time_embedding_dim: 128
-  kernel_size: 3
+method:
+  _target_: src.models.methods.generative.flow.cfm.conditional_flow_matching.ConditionalFlowMatching
   integration_steps: 50
+  condition_encoder:
+    _target_: src.models.components.conditioning.meanvc.CachedConditionEncoder
+    content_dim: 256
+    speaker_dim: 256
+    output_dim: 128
+  network:
+    _target_: src.models.networks.unet.conditional.UNet
+    n_mels: 80
+    condition_dim: 128
+    hidden_channels: 512
+    time_embedding_dim: 128
+    kernel_size: 3
+    time_fields: [time]
 
 compile: false

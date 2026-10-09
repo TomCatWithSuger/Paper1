@@ -1,4 +1,5 @@
 # @package _global_
+# B3：MeanVoiceFlow，在 MeanFlow 上加入扩散伪源先验和零输入重构。
 
 defaults:
   - override /data: vctk
