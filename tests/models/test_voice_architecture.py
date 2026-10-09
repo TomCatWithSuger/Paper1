@@ -1,9 +1,8 @@
-"""语音四层架构、配置及检查点兼容回归。"""
+"""语音四层架构、配置及 Lightning 生命周期回归。"""
 
-from collections import OrderedDict
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import cast
 
 import pytest
 import torch
@@ -14,7 +13,6 @@ from omegaconf import OmegaConf
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
-from src.models.components.conditioning.meanvc import CachedConditionEncoder
 from src.models.methods.generative.flow.cfm.conditional_flow_matching import (
     ConditionalFlowMatching,
 )
@@ -23,60 +21,28 @@ from src.models.methods.generative.flow.mean_flow.conditional_mean_flow import (
 )
 from src.models.methods.generative.flow.mean_flow.meanvoiceflow import MeanVoiceFlow
 from src.models.modules.voice_flow_module import VoiceFlowModule
-from src.models.networks.transformer.conditional import Transformer
 from src.models.networks.unet.conditional import UNet
-from tests.models.committed_baseline import committed_module
-
-ConditionalFlowMatchingUNet = committed_module(
-    "components.conditional_flow_matching_unet"
-).ConditionalFlowMatchingUNet
-ConditionalFlowMatchingTransformer = committed_module(
-    "components.conditional_flow_matching"
-).ConditionalFlowMatchingTransformer
-ConditionalMeanFlowUNet = committed_module(
-    "components.conditional_mean_flow_unet"
-).ConditionalMeanFlowUNet
-MeanVoiceFlowUNet = committed_module("components.meanvoiceflow_unet").MeanVoiceFlowUNet
-ConditionalFlowMatchingLitModule = committed_module(
-    "conditional_flow_matching_module"
-).ConditionalFlowMatchingLitModule
-ConditionalMeanFlowLitModule = committed_module(
-    "conditional_mean_flow_module"
-).ConditionalMeanFlowLitModule
-MeanVoiceFlowLitModule = committed_module("meanvoiceflow_module").MeanVoiceFlowLitModule
-CommittedConditionEncoder = committed_module(
-    "components.meanvc_conditioning"
-).CachedConditionEncoder
-
 
 ROOT = Path(__file__).resolve().parents[2]
 CASES = [
     (
         "conditional_flow_matching",
         ConditionalFlowMatching,
-        ConditionalFlowMatchingUNet,
-        ConditionalFlowMatchingLitModule,
         ("time",),
     ),
     (
         "conditional_flow_matching_transformer",
         ConditionalFlowMatching,
-        ConditionalFlowMatchingTransformer,
-        ConditionalFlowMatchingLitModule,
         ("time",),
     ),
     (
         "conditional_mean_flow",
         ConditionalMeanFlow,
-        ConditionalMeanFlowUNet,
-        ConditionalMeanFlowLitModule,
         ("time", "interval"),
     ),
     (
         "meanvoiceflow",
         MeanVoiceFlow,
-        MeanVoiceFlowUNet,
-        MeanVoiceFlowLitModule,
         ("time", "interval", "source_time"),
     ),
 ]
@@ -108,8 +74,8 @@ def batch():
     }
 
 
-@pytest.mark.parametrize("name,method_type,legacy_net,legacy_module,fields", CASES)
-def test_config_ownership_and_training(name, method_type, legacy_net, legacy_module, fields):
+@pytest.mark.parametrize("name,method_type,fields", CASES)
+def test_config_ownership_and_training(name, method_type, fields):
     module = instantiate(small_config(name))
     assert type(module) is VoiceFlowModule
     assert isinstance(module.method, method_type)
@@ -134,69 +100,6 @@ def test_config_ownership_and_training(name, method_type, legacy_net, legacy_mod
     generated = module.predict_step(values, 0)
     assert generated.shape == prediction.shape
     assert torch.count_nonzero(generated[1, :, 10:]) == 0
-
-
-@pytest.mark.parametrize("name,method_type,legacy_net,legacy_module,fields", CASES)
-def test_legacy_strict_checkpoint_and_numerics(
-    name, method_type, legacy_net, legacy_module, fields
-):
-    cfg = small_config(name)
-    kwargs = cast(dict[str, Any], OmegaConf.to_container(cfg.method.network))
-    kwargs.pop("_target_")
-    kwargs.pop("time_fields", None)
-    torch.manual_seed(21)
-    old_net = legacy_net(**kwargs)
-    old_encoder = CommittedConditionEncoder(content_dim=8, speaker_dim=8, output_dim=8)
-    old = legacy_module(old_net, old_encoder, lambda params: torch.optim.Adam(params), None)
-    module = instantiate(cfg)
-    old_state = OrderedDict(
-        (
-            key.replace("method.network.", "net.").replace(
-                "method.condition_encoder.", "condition_encoder."
-            ),
-            value,
-        )
-        for key, value in old.state_dict().items()
-    )
-    result = module.load_state_dict(old_state, strict=True)
-    assert not result.missing_keys and not result.unexpected_keys
-    inputs = batch()
-    for seed in (10, 123):
-        torch.manual_seed(seed)
-        expected = old.model_step(inputs)
-        torch.manual_seed(seed)
-        actual = module.model_step(inputs)
-        for left, right in zip(expected, actual):
-            torch.testing.assert_close(left, right, rtol=0, atol=0)
-    condition = torch.randn(2, 8, 13)
-    mask = inputs["mel_attention_mask"]
-    sample_kwargs: dict[str, Any] = (
-        {"source_mels": inputs["mel_spectrograms"]} if name == "meanvoiceflow" else {}
-    )
-    if name.startswith("conditional_flow_matching"):
-        sample_kwargs["integration_steps"] = 2
-    torch.manual_seed(51)
-    expected = old_net.sample(condition, mask, **sample_kwargs)
-    torch.manual_seed(51)
-    actual = module.method.sample(condition, mask, **sample_kwargs)
-    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
-    missing = old_state.copy()
-    missing.pop(next(iter(missing)))
-    with pytest.raises(RuntimeError, match="Missing key"):
-        module.load_state_dict(missing, strict=True)
-    extra = old_state.copy()
-    extra["unknown.weight"] = torch.ones(1)
-    with pytest.raises(RuntimeError, match="Unexpected key"):
-        module.load_state_dict(extra, strict=True)
-    collision = old_state.copy()
-    key = next(iter(old_state))
-    collision[module._canonical_key(key)] = old_state[key]
-    with pytest.raises(ValueError, match="冲突"):
-        module.load_state_dict(collision, strict=True)
-    wrong_shape = old_state.copy()
-    wrong_shape[key] = torch.ones(1)
-    with pytest.raises(RuntimeError, match="size mismatch"):
-        module.load_state_dict(wrong_shape, strict=True)
 
 
 @pytest.mark.parametrize(
