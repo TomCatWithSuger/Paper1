@@ -45,8 +45,11 @@ class DenseAdversarialPair(nn.Module):
     """组合共享数据契约的全连接生成器与判别器。"""
 
     def __init__(
-        self, input_shape=(1, 28, 28), latent_dim=100,
-        generator_hidden_dims=(256, 512, 1024), discriminator_hidden_dims=(512, 256),
+        self,
+        input_shape=(1, 28, 28),
+        latent_dim=100,
+        generator_hidden_dims=(256, 512, 1024),
+        discriminator_hidden_dims=(512, 256),
         discriminator_dropout=0.2,
     ):
         super().__init__()
@@ -59,7 +62,9 @@ class DenseAdversarialPair(nn.Module):
         self.input_shape = tuple(input_shape)
         self.latent_dim = latent_dim
         self.generator = DenseGenerator(latent_dim, self.input_shape, generator_hidden_dims)
-        self.discriminator = DenseDiscriminator(self.input_shape, discriminator_hidden_dims, discriminator_dropout)
+        self.discriminator = DenseDiscriminator(
+            self.input_shape, discriminator_hidden_dims, discriminator_dropout
+        )
 
     def forward(self, latent):
         return self.generator(latent)

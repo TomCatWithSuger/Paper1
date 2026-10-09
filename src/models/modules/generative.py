@@ -8,13 +8,14 @@ from lightning import LightningModule
 from lightning.pytorch.utilities.types import OptimizerLRScheduler
 from torchmetrics import MeanMetric
 
+
 def _map_legacy_state_dict(method, state_dict):
     network_keys = set(method.network.state_dict())
     method_keys = set(method.state_dict())
     mapped: Any = OrderedDict()
     for key, value in state_dict.items():
         if key.startswith("net."):
-            suffix = key[len("net."):]
+            suffix = key[len("net.") :]
             destination = (
                 "method.network." + suffix
                 if suffix in network_keys or suffix not in method_keys
@@ -32,7 +33,7 @@ def _map_legacy_state_dict(method, state_dict):
             if key == "net":
                 destinations = ["method", "method.network"]
             elif key.startswith("net."):
-                destinations = ["method.network" + key[len("net"):]]
+                destinations = ["method.network" + key[len("net") :]]
             elif key == "criterion":
                 destinations = ["method.criterion"]
             for destination in destinations:
@@ -102,9 +103,15 @@ class GenerativeModule(LightningModule):
         optimizer = self.optimizer_factory(params=self.parameters())
         if self.scheduler_factory is not None:
             scheduler = self.scheduler_factory(optimizer=optimizer)
-            return {"optimizer": optimizer, "lr_scheduler": {
-                "scheduler": scheduler, "monitor": "val/loss", "interval": "epoch", "frequency": 1,
-            }}
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {
+                    "scheduler": scheduler,
+                    "monitor": "val/loss",
+                    "interval": "epoch",
+                    "frequency": 1,
+                },
+            }
         return {"optimizer": optimizer}
 
     def load_state_dict(self, state_dict, strict=True, assign=False):

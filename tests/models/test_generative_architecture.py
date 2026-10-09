@@ -4,17 +4,16 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
+import torch
 from hydra.utils import instantiate
 from lightning import LightningModule, Trainer
 from omegaconf import OmegaConf
-import pytest
-import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 from src.models.modules.generative import _map_legacy_state_dict
 from tests.models.committed_baseline import committed_module
-
 
 ROOT = Path(__file__).resolve().parents[2]
 CASES = {
@@ -46,7 +45,9 @@ def small_config(name):
     if name in ("ae", "vae"):
         network.update(hidden_dims=[16, 8], latent_dim=4)
     elif name == "gan":
-        network.update(latent_dim=4, generator_hidden_dims=[8, 16], discriminator_hidden_dims=[16, 8])
+        network.update(
+            latent_dim=4, generator_hidden_dims=[8, 16], discriminator_hidden_dims=[16, 8]
+        )
     elif name in ("ddpm", "flow_matching", "score_based"):
         network.hidden_dims = [16, 8]
         network["noise_embedding_dim" if name == "score_based" else "time_embedding_dim"] = 8
@@ -87,16 +88,23 @@ def old_module(name, cfg):
         kwargs.update(method_kwargs)
     net = network_type(**kwargs)
     if name == "gan":
-        return module_type(net, instantiate(cfg.generator_optimizer), instantiate(cfg.discriminator_optimizer))
+        return module_type(
+            net, instantiate(cfg.generator_optimizer), instantiate(cfg.discriminator_optimizer)
+        )
     module_kwargs = {"compile": False}
     if name == "vae":
         module_kwargs["beta"] = method_kwargs["beta"]
-    return module_type(net, instantiate(cfg.optimizer), instantiate(cfg.scheduler), **module_kwargs)
+    return module_type(
+        net, instantiate(cfg.optimizer), instantiate(cfg.scheduler), **module_kwargs
+    )
 
 
 def optimizers(module) -> list[torch.optim.Optimizer]:
     configured = module.configure_optimizers()
-    return cast(list[torch.optim.Optimizer], configured if isinstance(configured, list) else [configured["optimizer"]])
+    return cast(
+        list[torch.optim.Optimizer],
+        configured if isinstance(configured, list) else [configured["optimizer"]],
+    )
 
 
 def assert_outputs_equal(left, right):
@@ -120,11 +128,18 @@ def test_committed_weights_loss_gradients_optimizer_and_sampling(name):
     assert not hasattr(module, "net")
     assert isinstance(module.method.network, nn.Module)
     assert tuple(module._modules)[:1] == ("method",)
-    for operation in ("sample", "generate", "interpolate", "perturb", "q_sample", "reparameterize"):
+    for operation in (
+        "sample",
+        "generate",
+        "interpolate",
+        "perturb",
+        "q_sample",
+        "reparameterize",
+    ):
         assert not hasattr(module.method.network, operation)
     old_params = list(old.named_parameters())
     new_params = list(module.named_parameters())
-    assert ["method.network." + key[len("net."):] for key, _ in old_params] == [
+    assert ["method.network." + key[len("net.") :] for key, _ in old_params] == [
         key for key, _ in new_params
     ]
     assert len(list(module.named_parameters(remove_duplicate=False))) == len(new_params)
@@ -153,14 +168,18 @@ def test_committed_weights_loss_gradients_optimizer_and_sampling(name):
         torch.testing.assert_close(expected_parameter.grad, actual_parameter.grad, rtol=0, atol=0)
     old_optimizers, new_optimizers = optimizers(old), optimizers(module)
     for expected_optimizer, actual_optimizer in zip(old_optimizers, new_optimizers):
-        old_group_names = [[
-            "method.network." + next(
-                key for key, parameter in old_params if parameter is value
-            )[len("net."):]
-            for value in group["params"]
-        ] for group in expected_optimizer.param_groups]
-        new_group_names = [[next(key for key, p in new_params if p is value) for value in group["params"]]
-                           for group in actual_optimizer.param_groups]
+        old_group_names = [
+            [
+                "method.network."
+                + next(key for key, parameter in old_params if parameter is value)[len("net.") :]
+                for value in group["params"]
+            ]
+            for group in expected_optimizer.param_groups
+        ]
+        new_group_names = [
+            [next(key for key, p in new_params if p is value) for value in group["params"]]
+            for group in actual_optimizer.param_groups
+        ]
         assert old_group_names == new_group_names
         expected_optimizer.step()
         actual_optimizer.step()
@@ -171,7 +190,11 @@ def test_committed_weights_loss_gradients_optimizer_and_sampling(name):
     old.eval()
     if name in ("vae", "ddpm", "flow_matching", "score_based", "dit", "gan"):
         torch.manual_seed(51)
-        expected_sample = old.net.generate(2, "cpu") if name == "gan" else old.net.sample(2 if name != "dit" else 17, "cpu")
+        expected_sample = (
+            old.net.generate(2, "cpu")
+            if name == "gan"
+            else old.net.sample(2 if name != "dit" else 17, "cpu")
+        )
         torch.manual_seed(51)
         if name == "gan":
             actual_sample = module.method.generate(2, "cpu")
@@ -203,14 +226,25 @@ def test_all_configs_lightning_lifecycle(name):
     values = batch(name)
     loader = DataLoader(cast(Dataset, [values]), batch_size=None)
     trainer = Trainer(
-        accelerator="cpu", devices=1, fast_dev_run=True, logger=False,
-        enable_checkpointing=False, enable_model_summary=False, enable_progress_bar=False,
+        accelerator="cpu",
+        devices=1,
+        fast_dev_run=True,
+        logger=False,
+        enable_checkpointing=False,
+        enable_model_summary=False,
+        enable_progress_bar=False,
     )
     trainer.fit(module, train_dataloaders=loader, val_dataloaders=loader)
     key = "val/generator_loss" if name == "gan" else "val/loss"
     assert torch.isfinite(trainer.callback_metrics[key])
     trainer.test(module, dataloaders=loader)
-    predict_loader = DataLoader(cast(Dataset, [cast(tuple[torch.Tensor, torch.Tensor], values)[0]]), batch_size=None) if name == "mnist" else loader
+    predict_loader = (
+        DataLoader(
+            cast(Dataset, [cast(tuple[torch.Tensor, torch.Tensor], values)[0]]), batch_size=None
+        )
+        if name == "mnist"
+        else loader
+    )
     predictions = cast(list[torch.Tensor], trainer.predict(module, dataloaders=predict_loader))
     assert torch.isfinite(predictions[0]).all()
 

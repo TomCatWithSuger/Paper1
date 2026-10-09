@@ -28,7 +28,12 @@ class VariationalAutoencoder(nn.Module):
         reconstruction, mu, logvar = self(x)
         reconstruction_loss = F.mse_loss(reconstruction, x, reduction="sum") / x.size(0)
         kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / x.size(0)
-        return reconstruction_loss + self.beta * kl_loss, reconstruction_loss, kl_loss, reconstruction
+        return (
+            reconstruction_loss + self.beta * kl_loss,
+            reconstruction_loss,
+            kl_loss,
+            reconstruction,
+        )
 
     def sample(self, num_samples, device):
         """从标准高斯先验采样并解码数据。"""

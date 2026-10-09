@@ -83,7 +83,13 @@ class ClassificationLitModule(LightningModule):
         optimizer = self.optimizer_factory(params=self.parameters())
         if self.scheduler_factory is not None:
             scheduler = self.scheduler_factory(optimizer=optimizer)
-            return {"optimizer": optimizer, "lr_scheduler": {
-                "scheduler": scheduler, "monitor": "val/loss", "interval": "epoch", "frequency": 1,
-            }}
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {
+                    "scheduler": scheduler,
+                    "monitor": "val/loss",
+                    "interval": "epoch",
+                    "frequency": 1,
+                },
+            }
         return {"optimizer": optimizer}

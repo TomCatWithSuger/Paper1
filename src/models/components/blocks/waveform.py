@@ -13,9 +13,11 @@ class ConvBlock1D(nn.Module):
         padding = kernel_size // 2
         self.block = nn.Sequential(
             nn.Conv1d(in_channels, out_channels, kernel_size, padding=padding),
-            nn.GroupNorm(1, out_channels), nn.SiLU(),
+            nn.GroupNorm(1, out_channels),
+            nn.SiLU(),
             nn.Conv1d(out_channels, out_channels, kernel_size, padding=padding),
-            nn.GroupNorm(1, out_channels), nn.SiLU(),
+            nn.GroupNorm(1, out_channels),
+            nn.SiLU(),
         )
 
     def forward(self, x):
@@ -32,8 +34,10 @@ class TransformerBlock(nn.Module):
         self.norm = nn.LayerNorm(embed_dim)
         self.self_attention = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True)
         self.feed_forward = nn.Sequential(
-            nn.LayerNorm(embed_dim), nn.Linear(embed_dim, embed_dim * 4),
-            nn.GELU(), nn.Linear(embed_dim * 4, embed_dim),
+            nn.LayerNorm(embed_dim),
+            nn.Linear(embed_dim, embed_dim * 4),
+            nn.GELU(),
+            nn.Linear(embed_dim * 4, embed_dim),
         )
         self.condition_proj = nn.Linear(context_dim, embed_dim)
 

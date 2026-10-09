@@ -26,7 +26,9 @@ class DDPM(nn.Module):
         self.register_buffer("sqrt_alpha_cumprod", torch.sqrt(alpha_cumprod))
         self.register_buffer("sqrt_one_minus_alpha_cumprod", torch.sqrt(1.0 - alpha_cumprod))
         self.register_buffer("sqrt_reciprocal_alphas", torch.sqrt(1.0 / alphas))
-        self.register_buffer("posterior_variance", betas * (1.0 - previous) / (1.0 - alpha_cumprod))
+        self.register_buffer(
+            "posterior_variance", betas * (1.0 - previous) / (1.0 - alpha_cumprod)
+        )
 
     @staticmethod
     def _extract(values, timesteps, x):

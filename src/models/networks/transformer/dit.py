@@ -18,7 +18,9 @@ class DiT1D(nn.Module):
         self.hidden_dim = hidden_dim
         self.input_proj = nn.Linear(in_channels, hidden_dim)
         self.time_embedding = nn.Sequential(
-            ContinuousTimeEmbedding(context_dim), nn.Linear(context_dim, context_dim), nn.SiLU(),
+            ContinuousTimeEmbedding(context_dim),
+            nn.Linear(context_dim, context_dim),
+            nn.SiLU(),
         )
         self.blocks = nn.ModuleList(
             [TransformerBlock(hidden_dim, num_heads, context_dim) for _ in range(num_layers)]
@@ -29,7 +31,9 @@ class DiT1D(nn.Module):
         if waveforms.ndim != 3:
             raise ValueError("waveforms must have shape [batch, time, channels]")
         if waveforms.size(-1) != self.in_channels:
-            raise ValueError(f"expected {self.in_channels} input channels, got {waveforms.size(-1)}")
+            raise ValueError(
+                f"expected {self.in_channels} input channels, got {waveforms.size(-1)}"
+            )
         hidden = self.input_proj(waveforms)
         context = self.time_embedding(times)
         for block in self.blocks:

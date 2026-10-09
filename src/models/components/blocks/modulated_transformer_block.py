@@ -23,11 +23,16 @@ class ConditionalTransformerBlock(nn.Module):
         return hidden * (1.0 + scale.unsqueeze(1)) + shift.unsqueeze(1)
 
     def forward(self, hidden, condition, padding_mask):
-        attention_scale, attention_shift, ffn_scale, ffn_shift = self.modulation(condition).chunk(4, dim=1)
+        attention_scale, attention_shift, ffn_scale, ffn_shift = self.modulation(condition).chunk(
+            4, dim=1
+        )
         normalized = self._modulate(self.norm1(hidden), attention_scale, attention_shift)
         attended, _ = self.attention(
-            query=normalized, key=normalized, value=normalized,
-            key_padding_mask=padding_mask, need_weights=False,
+            query=normalized,
+            key=normalized,
+            value=normalized,
+            key_padding_mask=padding_mask,
+            need_weights=False,
         )
         hidden = hidden + attended
         normalized = self._modulate(self.norm2(hidden), ffn_scale, ffn_shift)

@@ -13,7 +13,9 @@ from src.models.methods.base import VoiceMethod
 class ConditionalMeanFlow(VoiceMethod):
     """使用停止梯度 JVP 目标学习条件平均速度场。"""
 
-    def __init__(self, network: nn.Module, condition_encoder: nn.Module, equal_time_probability=0.75):
+    def __init__(
+        self, network: nn.Module, condition_encoder: nn.Module, equal_time_probability=0.75
+    ):
         super().__init__(network, condition_encoder)
         if not 0.0 <= equal_time_probability <= 1.0:
             raise ValueError("equal_time_probability 必须位于 [0, 1]")
@@ -21,7 +23,10 @@ class ConditionalMeanFlow(VoiceMethod):
 
     def forward(self, noisy_mels, start_times, end_times, condition, target_mask=None):
         return self.network(
-            noisy_mels, {"time": end_times, "interval": end_times - start_times}, condition, target_mask
+            noisy_mels,
+            {"time": end_times, "interval": end_times - start_times},
+            condition,
+            target_mask,
         )
 
     @staticmethod
@@ -55,7 +60,10 @@ class ConditionalMeanFlow(VoiceMethod):
             content_features, content_lengths, speaker_features, target_mask
         )
         noise = torch.randn(
-            target_mels.shape, device=target_mels.device, dtype=target_mels.dtype, generator=generator
+            target_mels.shape,
+            device=target_mels.device,
+            dtype=target_mels.dtype,
+            generator=generator,
         )
         start_times, end_times = self._sample_time_intervals(
             target_mels.size(0), target_mels.device, target_mels.dtype, generator=generator
@@ -68,11 +76,17 @@ class ConditionalMeanFlow(VoiceMethod):
 
         predicted_velocity = average_velocity(path_samples, end_times, start_times)
         with torch.no_grad(), torch.autocast(device_type=target_mels.device.type, enabled=False):
-            jvp_fn = cast(Callable[..., tuple[torch.Tensor, torch.Tensor]], getattr(torch.func, "jvp"))
+            jvp_fn = cast(
+                Callable[..., tuple[torch.Tensor, torch.Tensor]], getattr(torch.func, "jvp")
+            )
             _, total_derivative = jvp_fn(
                 average_velocity,
                 (path_samples, end_times, start_times),
-                (instantaneous_velocity, torch.ones_like(end_times), torch.zeros_like(start_times)),
+                (
+                    instantaneous_velocity,
+                    torch.ones_like(end_times),
+                    torch.zeros_like(start_times),
+                ),
                 has_aux=False,
             )
         shape = (end_times.size(0),) + (1,) * (target_mels.ndim - 1)
@@ -87,8 +101,11 @@ class ConditionalMeanFlow(VoiceMethod):
         if integration_steps not in (None, 1):
             raise ValueError("MeanFlow 仅支持一步生成")
         samples = torch.randn(
-            condition.size(0), self.network.n_mels, condition.size(2),
-            device=condition.device, dtype=condition.dtype,
+            condition.size(0),
+            self.network.n_mels,
+            condition.size(2),
+            device=condition.device,
+            dtype=condition.dtype,
         )
         end_times = torch.ones(samples.size(0), device=samples.device, dtype=samples.dtype)
         start_times = torch.zeros_like(end_times)

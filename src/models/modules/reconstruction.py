@@ -36,7 +36,10 @@ class VAELitModule(GenerativeModule):
             metric = getattr(self, f"{stage}_{name}")
             metric(value)
             self.log(
-                f"{stage}/{name}", metric, on_step=False, on_epoch=True,
+                f"{stage}/{name}",
+                metric,
+                on_step=False,
+                on_epoch=True,
                 prog_bar=name == "loss",
             )
         return loss

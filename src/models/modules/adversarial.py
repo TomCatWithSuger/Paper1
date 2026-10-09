@@ -105,7 +105,9 @@ class GANLitModule(LightningModule):
     def configure_optimizers(self):
         return [
             self.generator_optimizer_factory(params=self.method.network.generator.parameters()),
-            self.discriminator_optimizer_factory(params=self.method.network.discriminator.parameters()),
+            self.discriminator_optimizer_factory(
+                params=self.method.network.discriminator.parameters()
+            ),
         ]
 
     def load_state_dict(self, state_dict, strict=True, assign=False):

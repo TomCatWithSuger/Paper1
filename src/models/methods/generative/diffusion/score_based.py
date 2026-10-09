@@ -11,8 +11,13 @@ class ScoreMatching(nn.Module):
     """实现多噪声尺度分数匹配和退火 Langevin 采样。"""
 
     def __init__(
-        self, network, sigma_min=0.01, sigma_max=1.0, num_noise_levels=100,
-        sampling_steps_per_level=10, sampling_step_size=1e-5,
+        self,
+        network,
+        sigma_min=0.01,
+        sigma_max=1.0,
+        num_noise_levels=100,
+        sampling_steps_per_level=10,
+        sampling_step_size=1e-5,
     ):
         super().__init__()
         self.network = network
@@ -43,7 +48,9 @@ class ScoreMatching(nn.Module):
     def compute_loss(self, data):
         """返回加权分数损失、预测、目标和扰动样本。"""
         random_levels = torch.rand(data.size(0), device=data.device, dtype=data.dtype)
-        levels = (log(self.sigma_min) + random_levels * (log(self.sigma_max) - log(self.sigma_min))).exp()
+        levels = (
+            log(self.sigma_min) + random_levels * (log(self.sigma_max) - log(self.sigma_min))
+        ).exp()
         expanded = self._expand_noise_levels(levels, data)
         noise = torch.randn_like(data)
         noisy = self.perturb(data, levels, noise)
@@ -58,7 +65,9 @@ class ScoreMatching(nn.Module):
         steps = steps_per_level or self.sampling_steps_per_level
         if steps <= 0:
             raise ValueError("steps_per_level must be positive")
-        samples = torch.randn(num_samples, *self.network.input_shape, device=device) * self.sigma_max
+        samples = (
+            torch.randn(num_samples, *self.network.input_shape, device=device) * self.sigma_max
+        )
         for level in self.noise_levels:
             levels = torch.full((num_samples,), level.item(), device=device, dtype=samples.dtype)
             step_size = self.sampling_step_size * (level / self.sigma_min).pow(2)

@@ -6,14 +6,20 @@ import torch
 from torch import nn
 
 from src.models.components.embeddings.dense_time import (
-    ContinuousTimeEmbedding, NoiseLevelEmbedding, SinusoidalTimeEmbedding,
+    ContinuousTimeEmbedding,
+    NoiseLevelEmbedding,
+    SinusoidalTimeEmbedding,
 )
 
 
 class _DenseField(nn.Module):
     def __init__(
-        self, input_shape=(1, 28, 28), hidden_dims=(512, 512, 256),
-        time_embedding_dim=64, embedding="continuous", predictor="velocity_predictor",
+        self,
+        input_shape=(1, 28, 28),
+        hidden_dims=(512, 512, 256),
+        time_embedding_dim=64,
+        embedding="continuous",
+        predictor="velocity_predictor",
     ):
         super().__init__()
         if not hidden_dims:
@@ -23,7 +29,8 @@ class _DenseField(nn.Module):
         self.input_size = prod(self.input_shape)
         self.time_embedding = nn.Sequential(
             embeddings[embedding](time_embedding_dim),
-            nn.Linear(time_embedding_dim, time_embedding_dim), nn.SiLU(),
+            nn.Linear(time_embedding_dim, time_embedding_dim),
+            nn.SiLU(),
         )
         layers = []
         size = self.input_size + time_embedding_dim
@@ -49,8 +56,12 @@ class DenseTimeField(_DenseField):
 class DenseNoiseField(_DenseField):
     """根据离散扩散时间步预测与输入同形状的噪声。"""
 
-    def __init__(self, input_shape=(1, 28, 28), hidden_dims=(512, 512, 256), time_embedding_dim=64):
-        super().__init__(input_shape, hidden_dims, time_embedding_dim, "discrete", "noise_predictor")
+    def __init__(
+        self, input_shape=(1, 28, 28), hidden_dims=(512, 512, 256), time_embedding_dim=64
+    ):
+        super().__init__(
+            input_shape, hidden_dims, time_embedding_dim, "discrete", "noise_predictor"
+        )
 
     def forward(self, x, timesteps):
         return self._predict(x, timesteps)
@@ -59,7 +70,9 @@ class DenseNoiseField(_DenseField):
 class DenseScoreField(nn.Module):
     """根据连续噪声等级预测与输入同形状的分数场。"""
 
-    def __init__(self, input_shape=(1, 28, 28), hidden_dims=(512, 512, 256), noise_embedding_dim=64):
+    def __init__(
+        self, input_shape=(1, 28, 28), hidden_dims=(512, 512, 256), noise_embedding_dim=64
+    ):
         super().__init__()
         if not hidden_dims:
             raise ValueError("hidden_dims must contain at least one dimension")
@@ -67,7 +80,8 @@ class DenseScoreField(nn.Module):
         self.input_size = prod(self.input_shape)
         self.noise_embedding = nn.Sequential(
             NoiseLevelEmbedding(noise_embedding_dim),
-            nn.Linear(noise_embedding_dim, noise_embedding_dim), nn.SiLU(),
+            nn.Linear(noise_embedding_dim, noise_embedding_dim),
+            nn.SiLU(),
         )
         layers = []
         size = self.input_size + noise_embedding_dim

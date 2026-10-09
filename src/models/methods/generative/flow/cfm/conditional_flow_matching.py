@@ -52,8 +52,11 @@ class ConditionalFlowMatching(VoiceMethod):
         if steps <= 0:
             raise ValueError("integration_steps 必须为正数")
         samples = torch.randn(
-            condition.size(0), self.network.n_mels, condition.size(2),
-            device=condition.device, dtype=condition.dtype,
+            condition.size(0),
+            self.network.n_mels,
+            condition.size(2),
+            device=condition.device,
+            dtype=condition.dtype,
         )
         step_size = 1.0 / steps
         for step in range(steps):

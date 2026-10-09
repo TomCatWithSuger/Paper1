@@ -13,13 +13,13 @@ Config
 
 各层职责：
 
-| 层级      | 目录                     | 职责                                                |
-| --------- | ------------------------ | --------------------------------------------------- |
-| Component | `src/models/components/` | 可复用的小型计算单元                                |
-| Network   | `src/models/networks/`   | 独立、完整的神经网络前向计算                        |
-| Method    | `src/models/methods/`    | 训练目标、损失、扰动和生成算法                      |
-| Module    | `src/models/modules/`    | Batch 适配、Lightning 生命周期、日志和优化器        |
-| Config    | `configs/model/`         | 选择并组装以上对象                                  |
+| 层级      | 目录                     | 职责                                         |
+| --------- | ------------------------ | -------------------------------------------- |
+| Component | `src/models/components/` | 可复用的小型计算单元                         |
+| Network   | `src/models/networks/`   | 独立、完整的神经网络前向计算                 |
+| Method    | `src/models/methods/`    | 训练目标、损失、扰动和生成算法               |
+| Module    | `src/models/modules/`    | Batch 适配、Lightning 生命周期、日志和优化器 |
+| Config    | `configs/model/`         | 选择并组装以上对象                           |
 
 依赖必须保持从上到下：
 

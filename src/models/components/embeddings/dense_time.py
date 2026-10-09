@@ -21,7 +21,8 @@ class SinusoidalTimeEmbedding(_TimeEmbedding):
     def forward(self, timesteps):
         half_dim = self.embedding_dim // 2
         frequencies = torch.exp(
-            -log(10_000) * torch.arange(half_dim, device=timesteps.device, dtype=torch.float32)
+            -log(10_000)
+            * torch.arange(half_dim, device=timesteps.device, dtype=torch.float32)
             / max(half_dim - 1, 1)
         )
         embeddings = timesteps.float().unsqueeze(1) * frequencies.unsqueeze(0)
@@ -35,7 +36,8 @@ class ContinuousTimeEmbedding(_TimeEmbedding):
     def forward(self, times):
         half_dim = self.embedding_dim // 2
         frequencies = torch.exp(
-            log(10_000) * torch.arange(half_dim, device=times.device, dtype=torch.float32)
+            log(10_000)
+            * torch.arange(half_dim, device=times.device, dtype=torch.float32)
             / max(half_dim - 1, 1)
         )
         embeddings = 2 * pi * times.float().unsqueeze(1) * frequencies.unsqueeze(0)
@@ -49,7 +51,8 @@ class NoiseLevelEmbedding(_TimeEmbedding):
     def forward(self, noise_levels):
         half_dim = self.embedding_dim // 2
         frequencies = torch.exp(
-            log(10_000) * torch.arange(half_dim, device=noise_levels.device, dtype=torch.float32)
+            log(10_000)
+            * torch.arange(half_dim, device=noise_levels.device, dtype=torch.float32)
             / max(half_dim - 1, 1)
         )
         embeddings = 2 * pi * noise_levels.log().unsqueeze(1) * frequencies.unsqueeze(0)

@@ -7,7 +7,9 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from src.models.components.blocks.modulated_transformer_block import ConditionalTransformerBlock
+from src.models.components.blocks.modulated_transformer_block import (
+    ConditionalTransformerBlock,
+)
 from src.models.components.embeddings.continuous_time import ContinuousTimeEmbedding
 
 
@@ -15,7 +17,12 @@ class Transformer(nn.Module):
     """融合 Mel、序列条件和连续时间的 Transformer 场网络。"""
 
     def __init__(
-        self, n_mels=80, hidden_dim=256, condition_dim=128, num_layers=6, num_heads=8,
+        self,
+        n_mels=80,
+        hidden_dim=256,
+        condition_dim=128,
+        num_layers=6,
+        num_heads=8,
     ):
         super().__init__()
         if min(n_mels, hidden_dim, condition_dim, num_layers, num_heads) <= 0:
@@ -32,10 +39,12 @@ class Transformer(nn.Module):
             nn.Linear(condition_dim, condition_dim),
             nn.SiLU(),
         )
-        self.blocks = nn.ModuleList([
-            ConditionalTransformerBlock(hidden_dim, num_heads, condition_dim)
-            for _ in range(num_layers)
-        ])
+        self.blocks = nn.ModuleList(
+            [
+                ConditionalTransformerBlock(hidden_dim, num_heads, condition_dim)
+                for _ in range(num_layers)
+            ]
+        )
         self.output_norm = nn.LayerNorm(hidden_dim)
         self.output_projection = nn.Linear(hidden_dim, n_mels)
 
@@ -43,7 +52,8 @@ class Transformer(nn.Module):
     def _position_embedding(sequence_length, embedding_dim, device, dtype):
         positions = torch.arange(sequence_length, device=device, dtype=torch.float32).unsqueeze(1)
         frequencies = torch.exp(
-            -log(10_000) * torch.arange(0, embedding_dim, 2, device=device, dtype=torch.float32)
+            -log(10_000)
+            * torch.arange(0, embedding_dim, 2, device=device, dtype=torch.float32)
             / embedding_dim
         )
         embeddings = torch.zeros(sequence_length, embedding_dim, device=device)
@@ -52,8 +62,11 @@ class Transformer(nn.Module):
         return embeddings.to(dtype=dtype).unsqueeze(0)
 
     def forward(
-        self, noisy_mels: torch.Tensor, times: Mapping[str, torch.Tensor],
-        condition: torch.Tensor, target_mask: torch.Tensor | None = None,
+        self,
+        noisy_mels: torch.Tensor,
+        times: Mapping[str, torch.Tensor],
+        condition: torch.Tensor,
+        target_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         if noisy_mels.ndim != 3 or condition.ndim != 3:
             raise ValueError("状态和条件必须具有形状 [batch, channels, frames]")

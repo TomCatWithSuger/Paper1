@@ -17,13 +17,20 @@ class VoiceFlowModule(LightningModule):
     _TEST_SEED_OFFSET = 1_000_000_000
 
     def __init__(
-        self, method, optimizer, scheduler=None, compile=False,
-        validation_sampling_count=None, test_sampling_count=None,
-        evaluation_seed=12345, warmup_steps=None,
+        self,
+        method,
+        optimizer,
+        scheduler=None,
+        compile=False,
+        validation_sampling_count=None,
+        test_sampling_count=None,
+        evaluation_seed=12345,
+        warmup_steps=None,
     ):
         super().__init__()
         self.save_hyperparameters(
-            logger=False, ignore=["method", "optimizer", "scheduler"],
+            logger=False,
+            ignore=["method", "optimizer", "scheduler"],
         )
         self.method = method
         self.optimizer_factory = optimizer
@@ -58,9 +65,7 @@ class VoiceFlowModule(LightningModule):
             self._tensor(batch, "target_mel_spectrograms", "mel_spectrograms"),
             self._tensor(batch, "target_mel_attention_mask", "mel_attention_mask"),
             self._tensor(batch, "target_content_features", "content_features"),
-            self._tensor(
-                batch, "target_content_feature_lengths", "content_feature_lengths"
-            ),
+            self._tensor(batch, "target_content_feature_lengths", "content_feature_lengths"),
             self._tensor(batch, "target_speaker_features", "speaker_features"),
         )
 
@@ -68,9 +73,7 @@ class VoiceFlowModule(LightningModule):
         return (
             self._tensor(batch, "source_mel_attention_mask", "mel_attention_mask"),
             self._tensor(batch, "source_content_features", "content_features"),
-            self._tensor(
-                batch, "source_content_feature_lengths", "content_feature_lengths"
-            ),
+            self._tensor(batch, "source_content_feature_lengths", "content_feature_lengths"),
             self._tensor(batch, "reference_speaker_features", "speaker_features"),
         )
 
@@ -96,7 +99,9 @@ class VoiceFlowModule(LightningModule):
         mask, content, lengths, speaker = self._inference_data(batch)
         kwargs = {}
         if self.method.requires_source_mels:
-            kwargs["source_mels"] = self._tensor(batch, "source_mel_spectrograms", "mel_spectrograms")
+            kwargs["source_mels"] = self._tensor(
+                batch, "source_mel_spectrograms", "mel_spectrograms"
+            )
         return self.method.generate(content, lengths, speaker, mask, **kwargs)
 
     def _evaluation_loss(self, batch, batch_idx, sampling_count, seed_offset):
@@ -141,25 +146,33 @@ class VoiceFlowModule(LightningModule):
             scheduler = WarmupCosineLR(
                 optimizer, int(self.trainer.estimated_stepping_batches), self.warmup_steps
             )
-            return {"optimizer": optimizer, "lr_scheduler": {
-                "scheduler": scheduler, "interval": "step", "frequency": 1,
-            }}
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {
+                    "scheduler": scheduler,
+                    "interval": "step",
+                    "frequency": 1,
+                },
+            }
         if self.scheduler_factory is not None:
             scheduler = self.scheduler_factory(optimizer=optimizer)
-            return {"optimizer": optimizer, "lr_scheduler": {
-                "scheduler": scheduler,
-                "monitor": "val/loss",
-                "interval": "epoch",
-                "frequency": 1,
-            }}
+            return {
+                "optimizer": optimizer,
+                "lr_scheduler": {
+                    "scheduler": scheduler,
+                    "monitor": "val/loss",
+                    "interval": "epoch",
+                    "frequency": 1,
+                },
+            }
         return {"optimizer": optimizer}
 
     @staticmethod
     def _canonical_key(key):
         if key.startswith("net."):
-            return "method.network." + key[len("net."):]
+            return "method.network." + key[len("net.") :]
         if key.startswith("condition_encoder."):
-            return "method.condition_encoder." + key[len("condition_encoder."):]
+            return "method.condition_encoder." + key[len("condition_encoder.") :]
         return key
 
     def load_state_dict(self, state_dict, strict=True, assign=False):

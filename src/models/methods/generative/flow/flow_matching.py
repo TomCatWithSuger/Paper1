@@ -49,7 +49,9 @@ class FlowMatching(nn.Module):
     def _integrate(self, samples, steps):
         step_size = 1.0 / steps
         for step in range(steps):
-            times = torch.full((samples.size(0),), step / steps, device=samples.device, dtype=samples.dtype)
+            times = torch.full(
+                (samples.size(0),), step / steps, device=samples.device, dtype=samples.dtype
+            )
             samples = samples + step_size * self(samples, times)
         return samples
 

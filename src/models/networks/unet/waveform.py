@@ -43,7 +43,9 @@ class UNet1D(nn.Module):
         if waveforms.ndim != 3:
             raise ValueError("waveforms must have shape [batch, time] or [batch, channels, time]")
         if waveforms.size(1) != self.in_channels:
-            raise ValueError(f"expected {self.in_channels} input channels, got {waveforms.size(1)}")
+            raise ValueError(
+                f"expected {self.in_channels} input channels, got {waveforms.size(1)}"
+            )
         if waveforms.size(-1) < 2 ** len(self.channels):
             raise ValueError("waveform length is too short for the configured U-Net depth")
         skips = []
@@ -59,4 +61,8 @@ class UNet1D(nn.Module):
                 x = F.interpolate(x, size=skip.size(-1), mode="linear", align_corners=False)
             x = decoder(torch.cat((skip, x), dim=1))
         reconstruction = self.output(x)
-        return reconstruction.squeeze(1) if squeeze_channel and self.out_channels == 1 else reconstruction
+        return (
+            reconstruction.squeeze(1)
+            if squeeze_channel and self.out_channels == 1
+            else reconstruction
+        )

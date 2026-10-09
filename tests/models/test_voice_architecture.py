@@ -15,35 +15,70 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 from src.models.components.conditioning.meanvc import CachedConditionEncoder
-from src.models.methods.generative.flow.cfm.conditional_flow_matching import ConditionalFlowMatching
-from src.models.methods.generative.flow.mean_flow.conditional_mean_flow import ConditionalMeanFlow
+from src.models.methods.generative.flow.cfm.conditional_flow_matching import (
+    ConditionalFlowMatching,
+)
+from src.models.methods.generative.flow.mean_flow.conditional_mean_flow import (
+    ConditionalMeanFlow,
+)
 from src.models.methods.generative.flow.mean_flow.meanvoiceflow import MeanVoiceFlow
 from src.models.modules.voice_flow_module import VoiceFlowModule
 from src.models.networks.transformer.conditional import Transformer
 from src.models.networks.unet.conditional import UNet
 from tests.models.committed_baseline import committed_module
 
-
-ConditionalFlowMatchingUNet = committed_module("components.conditional_flow_matching_unet").ConditionalFlowMatchingUNet
-ConditionalFlowMatchingTransformer = committed_module("components.conditional_flow_matching").ConditionalFlowMatchingTransformer
-ConditionalMeanFlowUNet = committed_module("components.conditional_mean_flow_unet").ConditionalMeanFlowUNet
+ConditionalFlowMatchingUNet = committed_module(
+    "components.conditional_flow_matching_unet"
+).ConditionalFlowMatchingUNet
+ConditionalFlowMatchingTransformer = committed_module(
+    "components.conditional_flow_matching"
+).ConditionalFlowMatchingTransformer
+ConditionalMeanFlowUNet = committed_module(
+    "components.conditional_mean_flow_unet"
+).ConditionalMeanFlowUNet
 MeanVoiceFlowUNet = committed_module("components.meanvoiceflow_unet").MeanVoiceFlowUNet
-ConditionalFlowMatchingLitModule = committed_module("conditional_flow_matching_module").ConditionalFlowMatchingLitModule
-ConditionalMeanFlowLitModule = committed_module("conditional_mean_flow_module").ConditionalMeanFlowLitModule
+ConditionalFlowMatchingLitModule = committed_module(
+    "conditional_flow_matching_module"
+).ConditionalFlowMatchingLitModule
+ConditionalMeanFlowLitModule = committed_module(
+    "conditional_mean_flow_module"
+).ConditionalMeanFlowLitModule
 MeanVoiceFlowLitModule = committed_module("meanvoiceflow_module").MeanVoiceFlowLitModule
-CommittedConditionEncoder = committed_module("components.meanvc_conditioning").CachedConditionEncoder
+CommittedConditionEncoder = committed_module(
+    "components.meanvc_conditioning"
+).CachedConditionEncoder
 
 
 ROOT = Path(__file__).resolve().parents[2]
 CASES = [
-    ("conditional_flow_matching", ConditionalFlowMatching, ConditionalFlowMatchingUNet,
-     ConditionalFlowMatchingLitModule, ("time",)),
-    ("conditional_flow_matching_transformer", ConditionalFlowMatching,
-     ConditionalFlowMatchingTransformer, ConditionalFlowMatchingLitModule, ("time",)),
-    ("conditional_mean_flow", ConditionalMeanFlow, ConditionalMeanFlowUNet,
-     ConditionalMeanFlowLitModule, ("time", "interval")),
-    ("meanvoiceflow", MeanVoiceFlow, MeanVoiceFlowUNet, MeanVoiceFlowLitModule,
-     ("time", "interval", "source_time")),
+    (
+        "conditional_flow_matching",
+        ConditionalFlowMatching,
+        ConditionalFlowMatchingUNet,
+        ConditionalFlowMatchingLitModule,
+        ("time",),
+    ),
+    (
+        "conditional_flow_matching_transformer",
+        ConditionalFlowMatching,
+        ConditionalFlowMatchingTransformer,
+        ConditionalFlowMatchingLitModule,
+        ("time",),
+    ),
+    (
+        "conditional_mean_flow",
+        ConditionalMeanFlow,
+        ConditionalMeanFlowUNet,
+        ConditionalMeanFlowLitModule,
+        ("time", "interval"),
+    ),
+    (
+        "meanvoiceflow",
+        MeanVoiceFlow,
+        MeanVoiceFlowUNet,
+        MeanVoiceFlowLitModule,
+        ("time", "interval", "source_time"),
+    ),
 ]
 
 
@@ -102,7 +137,9 @@ def test_config_ownership_and_training(name, method_type, legacy_net, legacy_mod
 
 
 @pytest.mark.parametrize("name,method_type,legacy_net,legacy_module,fields", CASES)
-def test_legacy_strict_checkpoint_and_numerics(name, method_type, legacy_net, legacy_module, fields):
+def test_legacy_strict_checkpoint_and_numerics(
+    name, method_type, legacy_net, legacy_module, fields
+):
     cfg = small_config(name)
     kwargs = cast(dict[str, Any], OmegaConf.to_container(cfg.method.network))
     kwargs.pop("_target_")
@@ -113,8 +150,12 @@ def test_legacy_strict_checkpoint_and_numerics(name, method_type, legacy_net, le
     old = legacy_module(old_net, old_encoder, lambda params: torch.optim.Adam(params), None)
     module = instantiate(cfg)
     old_state = OrderedDict(
-        (key.replace("method.network.", "net.").replace(
-            "method.condition_encoder.", "condition_encoder."), value)
+        (
+            key.replace("method.network.", "net.").replace(
+                "method.condition_encoder.", "condition_encoder."
+            ),
+            value,
+        )
         for key, value in old.state_dict().items()
     )
     result = module.load_state_dict(old_state, strict=True)
@@ -129,7 +170,9 @@ def test_legacy_strict_checkpoint_and_numerics(name, method_type, legacy_net, le
             torch.testing.assert_close(left, right, rtol=0, atol=0)
     condition = torch.randn(2, 8, 13)
     mask = inputs["mel_attention_mask"]
-    sample_kwargs: dict[str, Any] = {"source_mels": inputs["mel_spectrograms"]} if name == "meanvoiceflow" else {}
+    sample_kwargs: dict[str, Any] = (
+        {"source_mels": inputs["mel_spectrograms"]} if name == "meanvoiceflow" else {}
+    )
     if name.startswith("conditional_flow_matching"):
         sample_kwargs["integration_steps"] = 2
     torch.manual_seed(51)
@@ -156,7 +199,9 @@ def test_legacy_strict_checkpoint_and_numerics(name, method_type, legacy_net, le
         module.load_state_dict(wrong_shape, strict=True)
 
 
-@pytest.mark.parametrize("fields", [("time",), ("time", "interval"), ("time", "interval", "source_time")])
+@pytest.mark.parametrize(
+    "fields", [("time",), ("time", "interval"), ("time", "interval", "source_time")]
+)
 def test_independent_time_embeddings_sum(fields):
     network = UNet(8, 8, 16, 8, time_fields=fields)
     times = {field: torch.rand(2) for field in fields}
@@ -178,13 +223,21 @@ def test_invalid_time_fields(fields):
         UNet(8, 8, 16, 8, time_fields=fields)
 
 
-@pytest.mark.parametrize("experiment", ["conditional_flow_matching_vctk", "conditional_mean_flow_vctk", "meanvoiceflow_vctk"])
+@pytest.mark.parametrize(
+    "experiment",
+    ["conditional_flow_matching_vctk", "conditional_mean_flow_vctk", "meanvoiceflow_vctk"],
+)
 def test_experiment_nested_overrides(experiment):
     with initialize_config_dir(version_base="1.3", config_dir=str(ROOT / "configs")):
-        cfg = compose(config_name="train", overrides=[
-            f"experiment={experiment}", "model.method.network.hidden_channels=16",
-            "model.method.condition_encoder.output_dim=8", "model.method.network.condition_dim=8",
-        ])
+        cfg = compose(
+            config_name="train",
+            overrides=[
+                f"experiment={experiment}",
+                "model.method.network.hidden_channels=16",
+                "model.method.condition_encoder.output_dim=8",
+                "model.method.network.condition_dim=8",
+            ],
+        )
     assert "net" not in cfg.model and "condition_encoder" not in cfg.model
     assert cfg.model.method.network.hidden_channels == 16
     if experiment == "conditional_mean_flow_vctk":
@@ -211,8 +264,13 @@ def test_lightning_fit_validate_test_predict(name):
     module = instantiate(small_config(name))
     loader = DataLoader(cast(Dataset, [batch()]), batch_size=None)
     trainer = Trainer(
-        accelerator="cpu", devices=1, fast_dev_run=True, logger=False,
-        enable_checkpointing=False, enable_model_summary=False, enable_progress_bar=False,
+        accelerator="cpu",
+        devices=1,
+        fast_dev_run=True,
+        logger=False,
+        enable_checkpointing=False,
+        enable_model_summary=False,
+        enable_progress_bar=False,
         inference_mode=False,
     )
     trainer.fit(module, train_dataloaders=loader, val_dataloaders=loader)
