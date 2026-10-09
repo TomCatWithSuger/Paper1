@@ -1,11 +1,12 @@
 import torch
 
-from src.models.gan_module import GANLitModule
-from src.models.legacy.dense_gan import DenseGAN
+from src.models.methods.generative.adversarial.gan import Adversarial
+from src.models.modules.adversarial import GANLitModule
+from src.models.networks.dense.adversarial import DenseAdversarialPair
 
 
 def test_dense_gan_shapes() -> None:
-    net = DenseGAN(
+    net = DenseAdversarialPair(
         input_shape=(1, 28, 28),
         latent_dim=16,
         generator_hidden_dims=(32, 64),
@@ -18,18 +19,18 @@ def test_dense_gan_shapes() -> None:
 
     assert generated_images.shape == (4, 1, 28, 28)
     assert logits.shape == (4, 1)
-    assert net.generate(4, device=latent.device).shape == (4, 1, 28, 28)
+    assert Adversarial(net).generate(4, device=latent.device).shape == (4, 1, 28, 28)
 
 
 def test_gan_model_step() -> None:
-    net = DenseGAN(
+    net = DenseAdversarialPair(
         input_shape=(1, 28, 28),
         latent_dim=16,
         generator_hidden_dims=(32, 64),
         discriminator_hidden_dims=(64, 32),
     )
     module = GANLitModule(
-        net=net,
+        method=Adversarial(net),
         generator_optimizer=lambda params: torch.optim.Adam(params, lr=1e-3),
         discriminator_optimizer=lambda params: torch.optim.Adam(params, lr=1e-3),
     )

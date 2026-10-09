@@ -1,4 +1,4 @@
-_target_: src.models.score_based_module.ScoreBasedLitModule
+_target_: src.models.modules.generative.ScoreBasedLitModule
 
 optimizer:
   _target_: torch.optim.Adam
@@ -13,15 +13,17 @@ scheduler:
   factor: 0.5
   patience: 10
 
-net:
-  _target_: src.models.legacy.dense_score_model.DenseScoreModel
-  input_shape: [1, 28, 28]
-  hidden_dims: [512, 512, 256]
-  noise_embedding_dim: 64
+method:
+  _target_: src.models.methods.generative.diffusion.score_based.ScoreMatching
   sigma_min: 0.01
   sigma_max: 1.0
   num_noise_levels: 100
   sampling_steps_per_level: 10
   sampling_step_size: 0.00001
+  network:
+    _target_: src.models.networks.dense.field.DenseScoreField
+    input_shape: [1, 28, 28]
+    hidden_dims: [512, 512, 256]
+    noise_embedding_dim: 64
 
 compile: false

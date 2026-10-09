@@ -1,7 +1,8 @@
 import torch
 
-from src.models.legacy.unet_1d import UNet1D
-from src.models.unet_module import UNetLitModule
+from src.models.methods.representation.masked import MaskedReconstruction
+from src.models.modules.reconstruction import UNetLitModule
+from src.models.networks.unet.waveform import UNet1D
 
 
 def test_unet_1d_shapes() -> None:
@@ -17,7 +18,7 @@ def test_unet_1d_shapes() -> None:
 def test_unet_model_step() -> None:
     net = UNet1D(channels=(4, 8), kernel_size=3)
     module = UNetLitModule(
-        net=net,
+        method=MaskedReconstruction(net),
         optimizer=lambda params: torch.optim.Adam(params, lr=1e-3),
         scheduler=None,
     )

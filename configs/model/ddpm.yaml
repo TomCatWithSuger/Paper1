@@ -1,4 +1,4 @@
-_target_: src.models.ddpm_module.DDPMLitModule
+_target_: src.models.modules.generative.DDPMLitModule
 
 optimizer:
   _target_: torch.optim.Adam
@@ -13,13 +13,15 @@ scheduler:
   factor: 0.5
   patience: 10
 
-net:
-  _target_: src.models.legacy.dense_ddpm.DenseDDPM
-  input_shape: [1, 28, 28]
-  hidden_dims: [512, 512, 256]
-  time_embedding_dim: 64
+method:
+  _target_: src.models.methods.generative.diffusion.ddpm.DDPM
   timesteps: 1000
   beta_start: 0.0001
   beta_end: 0.02
+  network:
+    _target_: src.models.networks.dense.field.DenseNoiseField
+    input_shape: [1, 28, 28]
+    hidden_dims: [512, 512, 256]
+    time_embedding_dim: 64
 
 compile: false

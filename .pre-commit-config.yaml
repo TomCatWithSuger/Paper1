@@ -59,6 +59,7 @@ repos:
     rev: 1.7.0 # or master if you're bold
     hooks:
       - id: interrogate
+        exclude: ^tests/
         args:
           [
             --verbose,
@@ -67,6 +68,10 @@ repos:
             --ignore-init-method,
             --ignore-module,
             --ignore-nested-functions,
+            --ignore-magic,
+            --ignore-semiprivate,
+            --ignore-property-decorators,
+            "--ignore-regex=^(forward|encode|decode|discriminate|model_step|training_step|validation_step|test_step|predict_step|setup|configure_optimizers|load_state_dict|state_dict|teardown|prepare_data|train_dataloader|val_dataloader|test_dataloader|predict_dataloader|on_.*|apply_mask)$",
             -vv,
           ]
 

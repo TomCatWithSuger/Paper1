@@ -326,19 +326,25 @@ configs/model/my_model.yaml
 内容示例：
 
 ```yaml
-_target_: src.models.my_model_module.MyModelLitModule
+_target_: src.models.modules.my_model.MyModelLitModule
 
 optimizer:
   _target_: torch.optim.Adam
   _partial_: true
   lr: 0.0001
 
-net:
-  _target_: src.models.components.my_network.MyNetwork
-  hidden_size: 256
+method:
+  _target_: src.models.methods.my_method.MyMethod
+  algorithm_parameter: 1.0
+  network:
+    _target_: src.models.networks.my_network.MyNetwork
+    hidden_size: 256
 
 compile: false
 ```
+
+模型配置遵循 `Config → Module → Method → Network → Components`：LightningModule 顶层只接收
+`method`，算法参数放在 `method`，网络结构参数放在 `method.network`。
 
 使用：
 

@@ -1,4 +1,6 @@
-_target_: src.models.mnist_module.MNISTLitModule
+_target_: src.models.modules.classification.ClassificationLitModule
+
+num_classes: 10
 
 optimizer:
   _target_: torch.optim.Adam
@@ -13,13 +15,15 @@ scheduler:
   factor: 0.1
   patience: 10
 
-net:
-  _target_: src.models.legacy.simple_dense_net.SimpleDenseNet
-  input_size: 784
-  lin1_size: 64
-  lin2_size: 128
-  lin3_size: 64
-  output_size: 10
+method:
+  _target_: src.models.methods.discriminative.classification.Classification
+  network:
+    _target_: src.models.networks.dense.classifier.SimpleDenseNet
+    input_size: 784
+    lin1_size: 64
+    lin2_size: 128
+    lin3_size: 64
+    output_size: 10
 
 # compile model for faster training with pytorch 2.0
 compile: false

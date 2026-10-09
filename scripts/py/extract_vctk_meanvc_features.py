@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.data.components.vctk_splits import discover_vctk_samples  # noqa: E402
-from src.models.components.meanvc_conditioning import (  # noqa: E402
+from src.models.components.conditioning.meanvc import (  # noqa: E402
     ContentEncoder,
     SpeakerEncoder,
 )

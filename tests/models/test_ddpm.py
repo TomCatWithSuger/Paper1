@@ -1,37 +1,37 @@
 import torch
 
-from src.models.ddpm_module import DDPMLitModule
-from src.models.legacy.dense_ddpm import DenseDDPM
+from src.models.methods.generative.diffusion.ddpm import DDPM
+from src.models.modules.generative import DDPMLitModule
+from src.models.networks.dense.field import DenseNoiseField
 
 
 def test_dense_ddpm_shapes() -> None:
-    net = DenseDDPM(
+    net = DenseNoiseField(
         input_shape=(1, 28, 28),
         hidden_dims=(64, 32),
         time_embedding_dim=16,
-        timesteps=8,
     )
+    method = DDPM(net, timesteps=8)
     x = torch.randn(4, 1, 28, 28)
     timesteps = torch.tensor([0, 1, 4, 7], dtype=torch.long)
     noise = torch.randn_like(x)
 
-    noisy_images = net.q_sample(x, timesteps, noise)
-    predicted_noise = net(noisy_images, timesteps)
+    noisy_images = method.q_sample(x, timesteps, noise)
+    predicted_noise = net(x=noisy_images, timesteps=timesteps)
 
     assert noisy_images.shape == x.shape
     assert predicted_noise.shape == noise.shape
-    assert net.sample(2, device=x.device).shape == (2, 1, 28, 28)
+    assert method.sample(2, device=x.device).shape == (2, 1, 28, 28)
 
 
 def test_ddpm_model_step() -> None:
-    net = DenseDDPM(
+    net = DenseNoiseField(
         input_shape=(1, 28, 28),
         hidden_dims=(64, 32),
         time_embedding_dim=16,
-        timesteps=8,
     )
     module = DDPMLitModule(
-        net=net,
+        method=DDPM(net, timesteps=8),
         optimizer=lambda params: torch.optim.Adam(params, lr=1e-3),
         scheduler=None,
     )

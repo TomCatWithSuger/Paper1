@@ -1,4 +1,5 @@
 # @package _global_
+# B2：条件 MeanFlow，学习区间平均速度并执行一步生成。
 
 defaults:
   - override /data: vctk

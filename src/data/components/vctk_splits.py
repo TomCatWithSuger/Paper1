@@ -8,6 +8,8 @@ from typing import Protocol, Sequence
 
 @dataclass(frozen=True)
 class VCTKSample:
+    """描述一条可用的 VCTK 语音与转录样本。"""
+
     utterance_id: str
     sentence_id: str
     speaker_id: str
@@ -17,16 +19,23 @@ class VCTKSample:
 
 @dataclass(frozen=True)
 class VCTKSplit:
+    """保存互斥的训练、验证和测试样本集合。"""
+
     train: tuple[VCTKSample, ...]
     val: tuple[VCTKSample, ...]
     test: tuple[VCTKSample, ...]
 
 
 class VCTKSplitStrategy(Protocol):
-    def split(self, samples: Sequence[VCTKSample]) -> VCTKSplit: ...
+    """定义 VCTK 样本划分策略的统一接口。"""
+
+    def split(self, samples: Sequence[VCTKSample]) -> VCTKSplit:
+        """将样本划分为训练、验证和测试集合。"""
+        ...
 
 
 def discover_vctk_samples(data_dir: Path, microphone: str) -> list[VCTKSample]:
+    """发现具有转录文本和对应音频的 VCTK 样本。"""
     samples: list[VCTKSample] = []
     transcript_root = data_dir / "txt"
     audio_root = data_dir / "wav48_silence_trimmed"
@@ -71,6 +80,8 @@ class RatioSpeakerSplit:
         self.test_ratio = test_ratio
 
     def split(self, samples: Sequence[VCTKSample]) -> VCTKSplit:
+        """按说话人比例生成互斥的数据划分。"""
+        """生成说话人与句子均满足未见约束的数据划分。"""
         speakers = sorted({sample.speaker_id for sample in samples})
         if len(speakers) < 3:
             raise ValueError("VCTK requires at least three speakers for train/val/test splits")
@@ -114,6 +125,7 @@ class UnseenSpeakerSentenceSplit:
         self.seed = seed
 
     def split(self, samples: Sequence[VCTKSample]) -> VCTKSplit:
+        """保留指定说话人与句子组合，并划分其余训练和验证样本。"""
         available_speakers = {sample.speaker_id for sample in samples}
         available_sentences = {sample.sentence_id for sample in samples}
         evaluation_speakers = set(self.evaluation_speaker_ids)
