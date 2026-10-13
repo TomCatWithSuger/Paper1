@@ -26,7 +26,6 @@ from src.data.components.vctk_splits import (
 )
 from src.data.vctk_datamodule import VCTKCollator, VCTKDataset
 
-
 # ====================
 # 2. Definitions
 # ====================
@@ -246,9 +245,7 @@ def _prepare_pair(
     pair_dataset = _dataset((source, reference), config, feature_cache_dir)
     source_item = pair_dataset[0]
     if source_item["reference_id"] != reference.utterance_id:
-        raise ValueError(
-            f"固定参考不匹配: {source.utterance_id} -> {source_item['reference_id']}"
-        )
+        raise ValueError(f"固定参考不匹配: {source.utterance_id} -> {source_item['reference_id']}")
     reference_item = pair_dataset[1]
     source_batch = collator([source_item])
     reference_batch = collator([reference_item])
@@ -392,9 +389,7 @@ def _aggregate(records: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
                 "sample_count": len(items),
                 "mel_l1_mean": _mean_or_nan(float(item["mel_l1"]) for item in items),
                 "mel_l1_median": median(float(item["mel_l1"]) for item in items),
-                "mel_l2_rmse_mean": _mean_or_nan(
-                    float(item["mel_l2_rmse"]) for item in items
-                ),
+                "mel_l2_rmse_mean": _mean_or_nan(float(item["mel_l2_rmse"]) for item in items),
                 "latency_ms_mean": _mean_or_nan(float(item["latency_ms"]) for item in items),
                 "rtf_mean": _mean_or_nan(float(item["rtf"]) for item in items),
             }
@@ -407,9 +402,7 @@ def _difference_rows(
     aggregates: Sequence[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], str | None]:
     complete_b1 = [
-        row
-        for row in aggregates
-        if row["model"] == "B1" and int(row["sample_count"]) == 100
+        row for row in aggregates if row["model"] == "B1" and int(row["sample_count"]) == 100
     ]
     b2_ids = {
         str(row["experiment_id"])
@@ -422,8 +415,7 @@ def _difference_rows(
     best_id = str(best_b1["experiment_id"])
     b2_id = sorted(b2_ids)[0]
     indexed = {
-        (str(record["experiment_id"]), str(record["source_id"])): record
-        for record in records
+        (str(record["experiment_id"]), str(record["source_id"])): record for record in records
     }
     rows = []
     for source_id in sorted(
@@ -558,17 +550,13 @@ def _execute(
     _validate_feature_cache(manifest, resolved_feature_cache)
 
     records = _load_ledger(ledger_path)
-    completed = {
-        (str(record["experiment_id"]), str(record["source_id"])) for record in records
-    }
+    completed = {(str(record["experiment_id"]), str(record["source_id"])) for record in records}
     for spec in specs:
         model, config = _load_model(spec.run_dir, device)
         collator = _collator(config)
         sample_rate = int(config["data"]["sample_rate"])
         pending_rows = [
-            row
-            for row in manifest
-            if (spec.experiment_id, row["source_id"]) not in completed
+            row for row in manifest if (spec.experiment_id, row["source_id"]) not in completed
         ]
         if pending_rows:
             warm_batch, _, _ = _prepare_pair(

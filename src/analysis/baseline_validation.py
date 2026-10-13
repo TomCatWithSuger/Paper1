@@ -16,9 +16,11 @@ from typing import Any, Sequence
 import yaml
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
-from src.data.components.vctk_splits import UnseenSpeakerSentenceSplit, discover_vctk_samples
+from src.data.components.vctk_splits import (
+    UnseenSpeakerSentenceSplit,
+    discover_vctk_samples,
+)
 from src.data.vctk_datamodule import VCTKDataset
-
 
 # ====================
 # 2. Definitions
@@ -116,9 +118,7 @@ def _read_config(run_dir: Path) -> dict[str, Any]:
 
 def _checkpoint_name(run_dir: Path) -> str:
     checkpoints = sorted(
-        path.name
-        for path in (run_dir / "checkpoints").glob("*.ckpt")
-        if path.name != "last.ckpt"
+        path.name for path in (run_dir / "checkpoints").glob("*.ckpt") if path.name != "last.ckpt"
     )
     return checkpoints[-1] if checkpoints else "未找到"
 
@@ -210,7 +210,9 @@ def _shared_split_config(runs: Sequence[RunSummary]) -> dict[str, Any]:
         key: [_nested_value(run.config, f"data.split_strategy.{key}") for run in runs]
         for key in keys
     }
-    mismatched = [key for key, items in values.items() if any(item != items[0] for item in items[1:])]
+    mismatched = [
+        key for key, items in values.items() if any(item != items[0] for item in items[1:])
+    ]
     if mismatched:
         raise ValueError(f"B1/B2/B3 数据划分配置不一致: {', '.join(mismatched)}")
     return {key: items[0] for key, items in values.items()}
@@ -228,9 +230,7 @@ def _build_test_manifest(
     dataset = VCTKDataset(
         samples=split.test,
         sample_rate=int(_nested_value(runs[0].config, "data.sample_rate")),
-        max_duration_seconds=float(
-            _nested_value(runs[0].config, "data.max_duration_seconds")
-        ),
+        max_duration_seconds=float(_nested_value(runs[0].config, "data.max_duration_seconds")),
         randomize=False,
         reference_mode="different_speaker",
     )
