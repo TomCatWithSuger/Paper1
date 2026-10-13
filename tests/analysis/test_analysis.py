@@ -12,13 +12,21 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import torch
 
 from scripts.analysis import compare_experiments, plot_training_metrics, visualize_mel
+from scripts.py.extract_vctk_meanvc_features import _manifest_utterance_ids
 from src.analysis import metrics_io
+from src.analysis.baseline_validation import _resolve_vctk_root
 from src.analysis.experiment_comparison import compare
 from src.analysis.mel import _prepare_mel, visualize
 from src.analysis.metrics_io import available_metrics, metric_points, summarize_metric
 from src.analysis.training_metrics import DEFAULT_METRICS, analyze
+from src.analysis.unified_vc_evaluation import (
+    _aggregate,
+    _align_target,
+    _validate_feature_cache,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -235,9 +243,101 @@ def test_cli_entries_use_analysis_api() -> None:
     assert visualize_mel._prepare_mel is _prepare_mel
 
 
+def test_resolve_vctk_root_adapts_parent_directory(tmp_path: Path) -> None:
+    """验证数据根目录适配不需要修改数据集元数据。"""
+    vctk_root = tmp_path / "VCTK"
+    (vctk_root / "txt").mkdir(parents=True)
+    (vctk_root / "wav48_silence_trimmed").mkdir()
+
+    assert _resolve_vctk_root(tmp_path) == vctk_root.resolve()
+    assert _resolve_vctk_root(vctk_root) == vctk_root.resolve()
+
+
+def test_unified_evaluation_aligns_target_frames() -> None:
+    """验证参考 Mel 只沿时间轴对齐。"""
+    target = torch.tensor([[0.0, 2.0], [10.0, 12.0]])
+
+    aligned = _align_target(target, frames=4)
+
+    assert aligned.shape == (2, 4)
+    assert torch.allclose(aligned[:, [0, 3]], target)
+
+
+def test_unified_evaluation_aggregates_samples() -> None:
+    """验证逐样本质量与效率指标按实验汇总。"""
+    rows = _aggregate(
+        [
+            {
+                "experiment_id": "b1",
+                "model": "B1",
+                "nfe": 5,
+                "mel_l1": 1.0,
+                "mel_l2_rmse": 2.0,
+                "latency_ms": 10.0,
+                "rtf": 0.1,
+            },
+            {
+                "experiment_id": "b1",
+                "model": "B1",
+                "nfe": 5,
+                "mel_l1": 3.0,
+                "mel_l2_rmse": 4.0,
+                "latency_ms": 30.0,
+                "rtf": 0.3,
+            },
+        ]
+    )
+
+    assert rows == [
+        {
+            "experiment_id": "b1",
+            "model": "B1",
+            "nfe": 5,
+            "sample_count": 2,
+            "mel_l1_mean": 2.0,
+            "mel_l1_median": 2.0,
+            "mel_l2_rmse_mean": 3.0,
+            "latency_ms_mean": 20.0,
+            "rtf_mean": 0.2,
+        }
+    ]
+
+
+def test_feature_extraction_reads_evaluation_manifest(tmp_path: Path) -> None:
+    """验证特征提取只选择清单中的源与参考语句。"""
+    manifest = tmp_path / "manifest.csv"
+    manifest.write_text(
+        "source_id,reference_id\np345_002,p347_002\np347_002,p351_002\n",
+        encoding="utf-8",
+    )
+
+    assert _manifest_utterance_ids(manifest) == {"p345_002", "p347_002", "p351_002"}
+    assert _manifest_utterance_ids(manifest, row_limit=1) == {"p345_002", "p347_002"}
+
+
+def test_unified_evaluation_checks_feature_cache(tmp_path: Path) -> None:
+    """验证评估开始前报告缺失的内容与说话人缓存。"""
+    cache = tmp_path / "cache"
+    (cache / "content").mkdir(parents=True)
+    (cache / "speaker").mkdir()
+    torch.save(torch.zeros(1), cache / "content" / "source.pt")
+
+    with pytest.raises(FileNotFoundError, match="3 个缓存文件"):
+        _validate_feature_cache(
+            [{"source_id": "source", "reference_id": "reference"}],
+            cache,
+        )
+
+
 @pytest.mark.parametrize(
     "script",
-    ["plot_training_metrics.py", "compare_experiments.py", "visualize_mel.py"],
+    [
+        "plot_training_metrics.py",
+        "compare_experiments.py",
+        "visualize_mel.py",
+        "analyze_baselines.py",
+        "evaluate_unified_vc.py",
+    ],
 )
 def test_cli_help_from_external_cwd(
     tmp_path: Path,

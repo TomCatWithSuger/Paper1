@@ -1,6 +1,7 @@
 """离线提取 VCTK 的 MeanVC 内容特征和说话人向量。"""
 
 import argparse
+import csv
 import os
 import sys
 from pathlib import Path
@@ -68,10 +69,33 @@ def _resolve_device(value: str) -> torch.device:
     return device
 
 
+def _manifest_utterance_ids(path: Path, row_limit: int | None = None) -> set[str]:
+    """读取统一评估清单中的源语句和参考语句 ID。"""
+    with path.open("r", encoding="utf-8", newline="") as file:
+        rows = list(csv.DictReader(file))
+    required_columns = {"source_id", "reference_id"}
+    if not rows or not required_columns.issubset(rows[0]):
+        raise ValueError(f"评估清单缺少列: {', '.join(sorted(required_columns))}")
+    if row_limit is not None:
+        if row_limit <= 0:
+            raise ValueError("manifest-limit 必须为正数")
+        rows = rows[:row_limit]
+    return {
+        utterance_id for row in rows for utterance_id in (row["source_id"], row["reference_id"])
+    }
+
+
 def extract_features(args: argparse.Namespace) -> None:
     """遍历 VCTK 并以 utterance ID 保存完整语句特征。"""
     device = _resolve_device(args.device)
     samples = discover_vctk_samples(args.data_dir, args.microphone)
+    if args.manifest is not None:
+        selected_ids = _manifest_utterance_ids(args.manifest, args.manifest_limit)
+        samples = [sample for sample in samples if sample.utterance_id in selected_ids]
+        found_ids = {sample.utterance_id for sample in samples}
+        missing_ids = sorted(selected_ids - found_ids)
+        if missing_ids:
+            raise FileNotFoundError(f"评估清单样本不存在: {', '.join(missing_ids)}")
     if args.limit is not None:
         samples = samples[: args.limit]
 
@@ -174,6 +198,8 @@ def main() -> None:
         default=_configured_path("MEANVC_WAVLM_CKPT", pretrained_dir / "wavlm_large.pt"),
     )
     parser.add_argument("--microphone", choices=("mic1", "mic2"), default="mic1")
+    parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--manifest-limit", type=int)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--overwrite", action="store_true")
@@ -181,6 +207,8 @@ def main() -> None:
 
     args.data_dir = args.data_dir.expanduser().resolve()
     args.output_dir = args.output_dir.expanduser().resolve()
+    if args.manifest is not None:
+        args.manifest = args.manifest.expanduser().resolve()
     extract_features(args)
 
 
