@@ -34,6 +34,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """生成基线审计报告和实验记录。"""
     args = _parser().parse_args()
     outputs = analyze_baselines(args.runs_root, args.data_root, args.output_dir)
     for name, path in outputs.items():

@@ -41,6 +41,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """运行统一 VC 生成与指标评估。"""
     args = _parser().parse_args()
     outputs = evaluate_unified(
         plan_path=args.plan,
