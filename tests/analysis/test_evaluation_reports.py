@@ -200,7 +200,9 @@ def test_baseline_report_writes_real_metrics_manifest_and_plan(audit):
     metrics = _read_csv(audit.paths["metrics"])
     assert len(metrics) == 9
     assert {row["experiment"] for row in metrics} == {"B1", "B2", "B3"}
-    assert all("old" not in row["run_dir"] for row in metrics)
+    for row in metrics:
+        label = row["experiment"]
+        assert Path(row["run_dir"]).name == f"2026-02-{label[-1]}_{label}"
     val = next(row for row in metrics if row["metric"] == "val/loss")
     assert [float(val[key]) for key in ("count", "best", "best_step", "final", "final_step")] == [
         3,
