@@ -167,6 +167,71 @@ def test_conditional_mean_flow_equal_endpoints_reduce_to_velocity(monkeypatch) -
     assert torch.allclose(target_velocity, expected_velocity, rtol=1e-5, atol=1e-6)
 
 
+def test_conditional_mean_flow_jvp_target_includes_nonzero_interval() -> None:
+    """验证非零时间区间的 JVP 修正项包含时间字段和状态导数。"""
+
+    class ZeroConditionEncoder(nn.Module):
+        def forward(self, content_features, content_lengths, speaker_features, target_mask):
+            return torch.zeros(
+                target_mask.size(0), 1, target_mask.size(1), dtype=target_mask.dtype
+            )
+
+    class AnalyticNetwork(nn.Module):
+        n_mels = 1
+
+        def forward(self, states, times, condition, target_mask):
+            time = times["time"].view(-1, 1, 1)
+            interval = times["interval"].view(-1, 1, 1)
+            return 2.0 * states + 3.0 * time + 5.0 * interval
+
+    method = ConditionalMeanFlow(AnalyticNetwork(), ZeroConditionEncoder(), 0.0)
+    target_mels = torch.tensor([[[1.0, 2.0]]])
+    target_mask = torch.ones(1, 2, dtype=torch.bool)
+
+    def fixed_intervals(batch_size, device, dtype, generator=None):
+        assert batch_size == 1
+        start = torch.tensor([0.2], device=device, dtype=dtype)
+        end = torch.tensor([0.8], device=device, dtype=dtype)
+        return start, end
+
+    method._sample_time_intervals = fixed_intervals
+    _, _, target_velocity, path_samples = method.compute_loss(
+        target_mels,
+        target_mask,
+        torch.zeros(1, 1, 1),
+        torch.ones(1, dtype=torch.long),
+        torch.zeros(1, 1),
+    )
+    interval = 0.6
+    noise = (path_samples - (1.0 - 0.8) * target_mels) / 0.8
+    instantaneous_velocity = noise - target_mels
+    expected_velocity = instantaneous_velocity - interval * (2.0 * instantaneous_velocity + 8.0)
+
+    assert torch.allclose(target_velocity, expected_velocity, atol=1e-5)
+
+
+def test_conditional_mean_flow_adaptive_loss_is_optional_and_masked() -> None:
+    """验证加权可关闭，且只使用有效帧计算样本误差。"""
+    prediction = torch.tensor([[[0.0, 0.0, 99.0]], [[2.0, 2.0, 2.0]]], requires_grad=True)
+    target = torch.zeros_like(prediction)
+    target_mask = torch.tensor([[True, True, False], [True, True, True]])
+    raw_method = _module().method
+    adaptive_method = ConditionalMeanFlow(
+        _network(), CachedConditionEncoder(8, 8, 8), adaptive_loss_power=1.0
+    )
+
+    raw_loss = raw_method._mean_flow_loss(prediction, target, target_mask)
+    expected_raw = torch.tensor(12.0 / 5.0)
+    assert torch.allclose(raw_loss, expected_raw)
+
+    adaptive_loss = adaptive_method._mean_flow_loss(prediction, target, target_mask)
+    adaptive_loss.backward()
+    assert adaptive_loss < raw_loss
+    assert prediction.grad is not None
+    assert torch.isfinite(prediction.grad).all()
+    assert prediction.grad[0, 0, 2] == 0
+
+
 def test_conditional_mean_flow_model_step_backward() -> None:
     """测试 JVP 目标可计算且预测分支可正常反向传播。"""
     module = _module()

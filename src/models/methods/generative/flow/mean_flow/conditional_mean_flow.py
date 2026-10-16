@@ -6,7 +6,6 @@ from typing import cast
 import torch
 from torch import nn
 
-from src.losses.masked_regression import masked_mse
 from src.models.methods.base import VoiceMethod
 
 
@@ -14,12 +13,21 @@ class ConditionalMeanFlow(VoiceMethod):
     """使用停止梯度 JVP 目标学习条件平均速度场。"""
 
     def __init__(
-        self, network: nn.Module, condition_encoder: nn.Module, equal_time_probability=0.75
+        self,
+        network: nn.Module,
+        condition_encoder: nn.Module,
+        equal_time_probability=0.75,
+        adaptive_loss_power=0.0,
+        adaptive_loss_epsilon=1.0e-3,
     ):
         super().__init__(network, condition_encoder)
         if not 0.0 <= equal_time_probability <= 1.0:
             raise ValueError("equal_time_probability 必须位于 [0, 1]")
+        if adaptive_loss_power < 0.0 or adaptive_loss_epsilon <= 0.0:
+            raise ValueError("adaptive loss 参数必须满足 power >= 0 且 epsilon > 0")
         self.equal_time_probability = equal_time_probability
+        self.adaptive_loss_power = adaptive_loss_power
+        self.adaptive_loss_epsilon = adaptive_loss_epsilon
 
     def forward(self, noisy_mels, start_times, end_times, condition, target_mask=None):
         return self.network(
@@ -45,6 +53,19 @@ class ConditionalMeanFlow(VoiceMethod):
             < self.equal_time_probability
         )
         return torch.where(equal_time_mask, end_times, start_times), end_times
+
+    def _mean_flow_loss(
+        self, prediction: torch.Tensor, target: torch.Tensor, target_mask: torch.Tensor
+    ) -> torch.Tensor:
+        valid = target_mask.unsqueeze(1).to(dtype=prediction.dtype)
+        squared_error = (prediction - target).square() * valid
+        sample_counts = valid.sum(dim=(1, 2)) * prediction.size(1)
+        sample_mse = squared_error.sum(dim=(1, 2)) / sample_counts.clamp_min(1.0)
+        if self.adaptive_loss_power == 0.0:
+            return squared_error.sum() / sample_counts.sum().clamp_min(1.0)
+        weights = (sample_mse + self.adaptive_loss_epsilon).pow(-self.adaptive_loss_power)
+        weights = weights.detach()
+        return (weights * sample_mse * sample_counts).sum() / sample_counts.sum().clamp_min(1.0)
 
     def compute_loss(
         self,
@@ -92,7 +113,7 @@ class ConditionalMeanFlow(VoiceMethod):
         shape = (end_times.size(0),) + (1,) * (target_mels.ndim - 1)
         interval = (end_times - start_times).view(shape)
         target_velocity = (instantaneous_velocity - interval * total_derivative).detach()
-        loss = masked_mse(predicted_velocity, target_velocity, target_mask)
+        loss = self._mean_flow_loss(predicted_velocity, target_velocity, target_mask)
         return loss, predicted_velocity, target_velocity, path_samples
 
     @torch.no_grad()

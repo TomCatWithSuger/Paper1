@@ -14,6 +14,8 @@ evaluation_seed: 12345
 method:
   _target_: src.models.methods.generative.flow.mean_flow.conditional_mean_flow.ConditionalMeanFlow
   equal_time_probability: 0.75
+  adaptive_loss_power: 0.0
+  adaptive_loss_epsilon: 1.0e-3
   condition_encoder:
     _target_: src.models.components.conditioning.meanvc.CachedConditionEncoder
     content_dim: 256

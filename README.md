@@ -137,23 +137,45 @@ uv run python src/train.py trainer=cpu
 - pre-commit：检查并格式化 Python、YAML、Markdown、Shell 和 Notebook 文件，同时执行代码质量、安全及拼写检查。
 - GitHub Actions：在推送到 `main` 或创建 Pull Request 时，自动运行跨平台测试、代码覆盖率和 pre-commit 检查。
 
+### 提交前检查
+
+在现有 Conda 环境中运行：
+
 ```bash
-# run all tests
-pytest
-
-# run tests with coverage
-pytest --cov src
-
-# run all pre-commit checks
+conda activate Lightning-Template
 pre-commit run --all-files
+make lint-changed
+make test-cov
+git diff --check
+git status --short
 ```
 
-使用 uv 时，在以上命令前添加 `uv run`，例如：
+| 检查                            | 作用与通过条件                                                                                                                                             |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pre-commit run --all-files`    | 对 Git 跟踪的文件执行全量代码质量检查；格式化修改后需重新运行，直到通过。                                                                                  |
+| `make lint-changed`             | 检查相对 `HEAD` 的已暂存、未暂存修改及未跟踪新文件，提前发现仅检查改动文件时的问题。                                                                       |
+| `make test-cov`                 | 运行完整测试并输出缺失覆盖行；测试须通过，`src` 总覆盖率须达到 **80%**。等价于 `pytest --cov src --cov-report=term-missing`，无需再重复运行普通 `pytest`。 |
+| VS Code 的“问题”面板            | 检查本次改动文件的 Pylance 类型错误，例如可空值访问和参数类型不匹配；pytest 和当前 pre-commit 不替代此检查。                                               |
+| `git diff --check`              | 检查未暂存修改的空白错误；暂存后还需运行 `git diff --cached --check`。                                                                                     |
+| `git status --short` 和差异审查 | 确认只提交预期文件，没有误加入数据、权重、日志或敏感信息；检查 `git diff` 及暂存后的 `git diff --cached`。                                                 |
+
+**普通 `pytest` 不检查覆盖率门槛。** 80% 是测试代码覆盖率要求，与下方 `interrogate` 的 80% docstring 覆盖率是两个独立指标。
+
+**全量 pre-commit 通过，不代表改动文件检查一定通过。** `interrogate` 按本次传入文件集合统计 docstring 覆盖率，全量文件的高覆盖率可能掩盖改动文件的低覆盖率，因此两种范围都要检查。`make lint-changed` 只覆盖尚未提交的改动，不包含当前分支此前已提交的改动。
+
+### 提交后、推送前检查
 
 ```bash
-uv run pytest
-uv run pre-commit run --all-files
+make lint-pr
 ```
+
+该命令先运行 `git fetch origin main` 更新远端基准，再检查 `origin/main...HEAD` 中新增、修改、复制或重命名的文件，模拟目标分支为 `main` 的 PR 代码质量检查。它需要联网，但不会合并代码；执行前应确认允许访问远端。它只检查已提交改动，不能替代提交前的 `make lint-changed`。PR 目标不是 `main` 时，应使用实际目标分支作为比较基准。
+
+### 依赖与 CI
+
+- 修改依赖时，同步维护实际使用的 Conda 配置及 CI 使用的 [pyproject.toml](pyproject.toml) 和 uv 锁文件；CI 使用 `uv sync --locked`，依赖声明与锁文件必须一致。更新锁文件或同步环境可能访问网络，应先确认允许下载，不要为本机检查额外创建环境。
+- 已使用 uv 环境时，可运行 `uv run pytest --cov src --cov-report=term-missing`、`uv run pre-commit run --all-files`。本机按项目约定使用现有 Conda 环境即可。
+- 本机 Linux 检查通过不能保证 Windows/macOS 兼容；推送后仍需确认 GitHub Actions 的跨平台测试、覆盖率和代码质量任务全部通过。
 
 ### Docstring 原则
 
