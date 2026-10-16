@@ -16,6 +16,13 @@ clean-logs: ## Clean logs
 format: ## Run pre-commit hooks
 	pre-commit run -a
 
+lint-pr: ## 仅检查相对 origin/main 已提交的新增/修改文件（对齐 PR CI）
+	git fetch origin main
+	git diff --name-only --diff-filter=ACMR -z origin/main...HEAD | xargs -0 -r pre-commit run --show-diff-on-failure --files
+
+lint-changed: ## 检查工作区改动（含未跟踪新文件），模拟"只查新增内容"
+	{ git diff --name-only --diff-filter=ACMR -z HEAD; git ls-files --others --exclude-standard -z; } | xargs -0 -r pre-commit run --show-diff-on-failure --files
+
 sync: ## Merge changes from main branch to your current branch
 	git pull
 	git pull origin main
@@ -25,6 +32,9 @@ test: ## Run not slow tests
 
 test-full: ## Run all tests
 	pytest
+
+test-cov: ## 运行测试并输出缺失行覆盖率（关注新增文件的 missing 行）
+	pytest --cov src --cov-report=term-missing
 
 train: ## Train the model
 	python src/train.py
