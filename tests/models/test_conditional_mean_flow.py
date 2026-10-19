@@ -1,3 +1,4 @@
+import pytest
 import torch
 from lightning import LightningModule
 from torch import nn
@@ -296,3 +297,314 @@ def test_conditional_mean_flow_one_step_sample(monkeypatch) -> None:
 
     assert calls == 1
     assert torch.allclose(generated, initial_noise - 1.0)
+
+
+def test_conditional_mean_flow_diagnostics_are_unweighted_masked_means() -> None:
+    """验证诊断返回未加权掩码均值，且 raw_meanflow_mse 等于预测与目标的掩码 MSE。"""
+    module = _module()
+    module.eval()
+    batch = _batch()
+    target_mask = batch["target_mel_attention_mask"]
+
+    result = module.model_step(batch, return_diagnostics=True)
+    assert len(result) == 5
+    _, predicted_velocity, target_velocity, _, diagnostics = result
+    assert set(diagnostics) == {
+        "raw_meanflow_mse",
+        "velocity_mse",
+        "nonzero_interval_mse",
+        "jvp_correction_rms",
+    }
+    valid = target_mask.unsqueeze(1).to(dtype=predicted_velocity.dtype)
+    elements = valid.sum() * predicted_velocity.size(1)
+    expected_raw = ((predicted_velocity - target_velocity).square() * valid).sum() / elements
+    assert torch.allclose(diagnostics["raw_meanflow_mse"], expected_raw)
+    assert torch.isfinite(diagnostics["raw_meanflow_mse"])
+    assert torch.isfinite(diagnostics["velocity_mse"])
+    assert diagnostics["jvp_correction_rms"] >= 0
+
+
+def test_conditional_mean_flow_diagnostics_empty_nonzero_group_is_nan(monkeypatch) -> None:
+    """验证非零区间组为空时 nonzero_interval_mse 记为 NaN 而非 0。"""
+    module = _module()
+    module.eval()
+    batch = _batch()
+    target_mels = batch["target_mel_spectrograms"]
+    fixed = torch.full((target_mels.size(0),), 0.5)
+
+    def equal_intervals(batch_size, device, dtype, generator=None):
+        times = fixed.to(device=device, dtype=dtype)
+        return times, times
+
+    monkeypatch.setattr(module.method, "_sample_time_intervals", equal_intervals)
+    _, _, _, _, diagnostics = module.model_step(batch, return_diagnostics=True)
+
+    assert torch.isnan(diagnostics["nonzero_interval_mse"])
+    assert diagnostics["jvp_correction_rms"] == 0
+    assert torch.isfinite(diagnostics["raw_meanflow_mse"])
+
+
+def test_conditional_mean_flow_diagnostics_nonzero_interval_when_present(monkeypatch) -> None:
+    """验证存在非零区间时 nonzero_interval_mse 有限且等于掩码 MSE。"""
+    module = _module()
+    module.eval()
+    batch = _batch()
+    target_mels = batch["target_mel_spectrograms"]
+    target_mask = batch["target_mel_attention_mask"]
+
+    def nonzero_intervals(batch_size, device, dtype, generator=None):
+        start = torch.full((batch_size,), 0.1, device=device, dtype=dtype)
+        end = torch.full((batch_size,), 0.9, device=device, dtype=dtype)
+        return start, end
+
+    monkeypatch.setattr(module.method, "_sample_time_intervals", nonzero_intervals)
+    _, predicted_velocity, target_velocity, _, diagnostics = module.model_step(
+        batch, return_diagnostics=True
+    )
+    valid = target_mask.unsqueeze(1).to(dtype=predicted_velocity.dtype)
+    elements = valid.sum() * predicted_velocity.size(1)
+    expected = ((predicted_velocity - target_velocity).square() * valid).sum() / elements
+
+    assert torch.isfinite(diagnostics["nonzero_interval_mse"])
+    assert torch.allclose(diagnostics["nonzero_interval_mse"], expected)
+    assert diagnostics["jvp_correction_rms"] > 0
+
+
+def test_conditional_mean_flow_diagnostics_fixed_sampling_is_deterministic() -> None:
+    """验证固定采样下诊断均值不受全局随机状态影响。"""
+    module = _module(equal_time_probability=0.0)
+    module.eval()
+    batch = _batch()
+
+    loss_a, diag_a = module._objectives(batch, 2, 4, 0)
+    torch.manual_seed(777)
+    _ = torch.randn(50)
+    loss_b, diag_b = module._objectives(batch, 2, 4, 0)
+
+    assert torch.equal(loss_a, loss_b)
+    assert set(diag_a) == set(diag_b) == {
+        "raw_meanflow_mse",
+        "velocity_mse",
+        "nonzero_interval_mse",
+        "jvp_correction_rms",
+    }
+    for key in diag_a:
+        assert torch.equal(diag_a[key], diag_b[key])
+
+
+def test_reject_inference_mode_jvp_guard() -> None:
+    """验证守卫函数仅在推理模式下拒绝前向自动微分。"""
+    from src.models.methods.base import reject_inference_mode_jvp
+
+    reject_inference_mode_jvp()
+    with torch.inference_mode():
+        with pytest.raises(RuntimeError, match="inference_mode"):
+            reject_inference_mode_jvp()
+
+
+def test_conditional_mean_flow_compute_loss_rejects_inference_mode() -> None:
+    """验证 B2 compute_loss 在推理模式下抛出而非静默退化。"""
+    method = _module().method
+    batch = _batch()
+    with torch.inference_mode():
+        with pytest.raises(RuntimeError, match="inference_mode"):
+            method.compute_loss(
+                batch["target_mel_spectrograms"],
+                batch["target_mel_attention_mask"],
+                batch["target_content_features"],
+                batch["target_content_feature_lengths"],
+                batch["target_speaker_features"],
+            )
+
+
+def test_meanvoiceflow_compute_loss_rejects_inference_mode() -> None:
+    """验证 B3 compute_loss 同样受推理模式守卫保护。"""
+    method = MeanVoiceFlow(
+        _network(),
+        CachedConditionEncoder(content_dim=8, speaker_dim=8, output_dim=8),
+    )
+    batch = _batch()
+    with torch.inference_mode():
+        with pytest.raises(RuntimeError, match="inference_mode"):
+            method.compute_loss(
+                batch["target_mel_spectrograms"],
+                batch["target_mel_attention_mask"],
+                batch["target_content_features"],
+                batch["target_content_feature_lengths"],
+                batch["target_speaker_features"],
+            )
+
+
+def test_conditional_mean_flow_no_grad_matches_normal() -> None:
+    """验证 no_grad 不破坏 JVP（仅 inference_mode 有害）。"""
+    module = _module()
+    batch = _batch()
+
+    torch.manual_seed(0)
+    loss_normal, _, target_normal, _ = module.model_step(batch)
+    torch.manual_seed(0)
+    with torch.no_grad():
+        loss_nograd, _, target_nograd, _ = module.model_step(batch)
+
+    assert torch.allclose(loss_normal, loss_nograd)
+    assert torch.allclose(target_normal, target_nograd)
+
+
+def test_validation_logs_diagnostics_under_trainer() -> None:
+    """验证 Trainer.validate 入口（inference_mode=False）记录全部 B2 诊断指标。"""
+    from lightning import Trainer
+    from torch.utils.data import DataLoader
+
+    module = _module(equal_time_probability=0.0, validation_sampling_count=2)
+    loader = DataLoader([_batch()], batch_size=None)
+    trainer = Trainer(
+        accelerator="cpu",
+        devices=1,
+        max_epochs=1,
+        logger=False,
+        enable_checkpointing=False,
+        enable_model_summary=False,
+        enable_progress_bar=False,
+        inference_mode=False,
+    )
+    trainer.validate(module, dataloaders=loader)
+
+    metrics = trainer.callback_metrics
+    for key in (
+        "val/loss",
+        "val/raw_meanflow_mse",
+        "val/velocity_mse",
+        "val/nonzero_interval_mse",
+        "val/jvp_correction_rms",
+        "val/one_step_reconstruction_l1",
+    ):
+        assert key in metrics, f"缺少诊断指标 {key}"
+
+
+def test_mean_flow_loss_zero_power_matches_masked_mse() -> None:
+    """验证 power=0 时 _mean_flow_loss 与 masked_mse 值及梯度一致。"""
+    from src.losses.masked_regression import masked_mse
+
+    method = _module().method  # adaptive_loss_power=0
+    target = torch.randn(3, 8, 12)
+    target_mask = torch.ones(3, 12, dtype=torch.bool)
+    target_mask[1, 10:] = False
+    target_mask[2, 8:] = False
+    p_custom = torch.randn(3, 8, 12, requires_grad=True)
+    p_ref = p_custom.detach().clone().requires_grad_(True)
+
+    loss_custom = method._mean_flow_loss(p_custom, target, target_mask)
+    loss_ref = masked_mse(p_ref, target, target_mask)
+    loss_custom.backward()
+    loss_ref.backward()
+
+    assert torch.allclose(loss_custom, loss_ref)
+    assert torch.allclose(p_custom.grad, p_ref.grad)
+
+
+def test_mean_flow_loss_weights_are_detached() -> None:
+    """验证自适应权重对预测停止梯度（无额外权重梯度项）。"""
+    method = ConditionalMeanFlow(
+        _network(),
+        CachedConditionEncoder(8, 8, 8),
+        adaptive_loss_power=1.0,
+        adaptive_loss_epsilon=1e-3,
+    )
+    prediction = torch.randn(2, 4, 5, requires_grad=True)
+    target = torch.randn(2, 4, 5)
+    target_mask = torch.ones(2, 5, dtype=torch.bool)
+    target_mask[1, 3:] = False
+
+    loss = method._mean_flow_loss(prediction, target, target_mask)
+
+    valid = target_mask.unsqueeze(1).to(dtype=prediction.dtype)
+    squared_error = (prediction - target).square() * valid
+    sample_counts = valid.sum(dim=(1, 2)) * prediction.size(1)
+    sample_mse = squared_error.sum(dim=(1, 2)) / sample_counts.clamp_min(1.0)
+    with torch.no_grad():
+        weights = (sample_mse + 1e-3).pow(-1.0)
+    expected = (weights * sample_mse * sample_counts).sum() / sample_counts.sum().clamp_min(1.0)
+
+    assert torch.allclose(loss, expected)
+    grad = torch.autograd.grad(loss, prediction, retain_graph=True)[0]
+    grad_expected = torch.autograd.grad(expected, prediction)[0]
+    assert torch.allclose(grad, grad_expected)
+
+
+def test_mean_flow_targets_are_stop_gradient() -> None:
+    """验证 JVP 目标为停止梯度，仅预测分支接收梯度。"""
+    module = _module()
+    loss, predicted_velocity, target_velocity, _ = module.model_step(_batch())
+
+    assert predicted_velocity.requires_grad is True
+    assert target_velocity.requires_grad is False
+
+    loss.backward()
+    assert torch.isfinite(loss)
+
+
+def test_mean_flow_loss_normalizes_by_valid_length() -> None:
+    """验证损失按有效帧数归一化（长样本权重更大）。"""
+    method = _module().method
+    target = torch.zeros(2, 1, 4)
+    prediction = torch.zeros(2, 1, 4)
+    prediction[0, 0, :] = 1.0  # 4 个有效帧，误差 1
+    prediction[1, 0, 0] = 3.0  # 1 个有效帧，误差 9
+    target_mask = torch.tensor([[True, True, True, True], [True, False, False, False]])
+
+    loss = method._mean_flow_loss(prediction, target, target_mask)
+
+    # 总平方误差 4+9=13，总有效元素 (4+1)*1=5 → 2.6（而非按样本均值 5.0）
+    assert torch.allclose(loss, torch.tensor(2.6))
+
+
+def test_conditional_mean_flow_rejects_invalid_adaptive_params() -> None:
+    """验证自适应损失与时间区间非法参数被拒绝。"""
+    with pytest.raises(ValueError):
+        ConditionalMeanFlow(_network(), CachedConditionEncoder(8, 8, 8), adaptive_loss_power=-1.0)
+    with pytest.raises(ValueError):
+        ConditionalMeanFlow(_network(), CachedConditionEncoder(8, 8, 8), adaptive_loss_epsilon=0.0)
+    with pytest.raises(ValueError):
+        ConditionalMeanFlow(_network(), CachedConditionEncoder(8, 8, 8), equal_time_probability=1.5)
+
+
+def test_mean_flow_loss_empty_mask_contract() -> None:
+    """验证全掩码批次损失为 0 且梯度有限为零。"""
+    method = _module().method
+    prediction = torch.randn(2, 4, 5, requires_grad=True)
+    target = torch.randn(2, 4, 5)
+    target_mask = torch.zeros(2, 5, dtype=torch.bool)
+
+    loss = method._mean_flow_loss(prediction, target, target_mask)
+    loss.backward()
+
+    assert loss.item() == 0.0
+    assert prediction.grad is not None
+    assert torch.isfinite(prediction.grad).all()
+    assert torch.all(prediction.grad == 0)
+
+
+def test_generate_invariant_under_fixed_seed_and_state_dict() -> None:
+    """验证固定种子下生成可复现，且 state_dict 往返不改变生成。"""
+    method = _module().method
+    method.eval()
+    content = torch.randn(2, 8, 9)
+    lengths = torch.tensor([9, 9])
+    speaker = torch.randn(2, 8)
+    target_mask = torch.ones(2, 9, dtype=torch.bool)
+
+    torch.manual_seed(42)
+    first = method.generate(content, lengths, speaker, target_mask)
+    torch.manual_seed(42)
+    second = method.generate(content, lengths, speaker, target_mask)
+    assert torch.allclose(first, second)
+
+    state = {k: v.clone() for k, v in method.state_dict().items()}
+    torch.manual_seed(42)
+    before = method.generate(content, lengths, speaker, target_mask)
+    method.load_state_dict(state)
+    torch.manual_seed(42)
+    after = method.generate(content, lengths, speaker, target_mask)
+
+    assert torch.allclose(before, after)
+    assert torch.allclose(before, first)

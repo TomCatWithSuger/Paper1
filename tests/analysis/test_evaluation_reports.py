@@ -188,6 +188,25 @@ def _evaluate(audit, output, **kwargs):
     )
 
 
+def _write_identity(audit, output, experiment_ids, base_seed=12345, device="cpu"):
+    """为预置账本构造与 _execute 一致的评估身份文件。"""
+    selected = set(experiment_ids)
+    specs = [spec for spec in unified._load_specs(audit.paths["plan"]) if spec.experiment_id in selected]
+    rows = unified._read_csv(audit.paths["manifest"])
+    identity = unified._build_run_identity(
+        specs,
+        audit.paths["manifest"],
+        rows,
+        audit.cache,
+        unified._model_config(specs[0].run_dir),
+        device,
+        base_seed,
+    )
+    (output / "evaluation_identity.json").write_text(
+        json.dumps(identity, ensure_ascii=False), encoding="utf-8"
+    )
+
+
 # ====================
 # 4. 基线审计报告
 # ====================
@@ -416,7 +435,7 @@ def test_unified_real_audio_metrics_outputs_and_resume(audit, model_boundary, tm
     assert model_boundary[-1][2].calls == [(99, 5), (102, 5), (103, 5)]
     assert len(unified._load_ledger(paths["ledger"])) == 6
     assert len(_read_csv(paths["per_sample"])) == 4
-    _evaluate(audit, output, limit=1, experiment_ids=["nfe_b3_01"])
+    _evaluate(audit, output, base_seed=100, limit=1, experiment_ids=["nfe_b3_01"])
     selected = _read_csv(paths["per_sample"])
     assert len(selected) == 1 and selected[0]["model"] == "B3"
     assert len(unified._load_ledger(paths["ledger"])) == 6
@@ -483,6 +502,7 @@ def test_unified_complete_ledger_selects_best_nfe_and_difference_categories(
         encoding="utf-8",
     )
     before = ledger.read_bytes()
+    _write_identity(audit, output, ["nfe_b1_01", "nfe_b1_50", "nfe_b2_01"])
     paths = _evaluate(audit, output, experiment_ids=["nfe_b1_01", "nfe_b1_50", "nfe_b2_01"])
     assert ledger.read_bytes() == before
     assert all(not method.calls for _, _, method in model_boundary)
@@ -581,6 +601,117 @@ def test_prepare_pair_rejects_same_speaker_fixed_reference(audit):
         unified._prepare_pair(
             row, by_id, audit.config, audit.cache, unified._collator(audit.config)
         )
+
+
+# ====================
+# 断点身份回归
+# ====================
+
+
+def _run_dir_for(audit, experiment_id):
+    for spec in unified._load_specs(audit.paths["plan"]):
+        if spec.experiment_id == experiment_id:
+            return spec.run_dir
+    raise AssertionError(experiment_id)
+
+
+@pytest.mark.parametrize("change", ["checkpoint", "reference", "nfe", "seed", "mel", "cache"])
+def test_unified_identity_rejects_changed_parameters(audit, model_boundary, tmp_path, change):
+    """修改 checkpoint、reference、NFE、seed、Mel 或缓存身份后续跑被拒绝。"""
+    output = tmp_path / "evaluation"
+    _evaluate(audit, output, base_seed=100, limit=1, experiment_ids=["nfe_b2_01"])
+    if change == "seed":
+        with pytest.raises(ValueError, match="评估身份不一致"):
+            _evaluate(audit, output, base_seed=999, limit=1, experiment_ids=["nfe_b2_01"])
+        return
+    run_dir = _run_dir_for(audit, "nfe_b2_01")
+    if change == "checkpoint":
+        (run_dir / "checkpoints" / "epoch_002.ckpt").write_bytes(b"changed")
+    elif change == "reference":
+        rows = _read_csv(audit.paths["manifest"])
+        rows[0]["reference_id"] = "p300_006"
+        _write_csv(audit.paths["manifest"], rows)
+    elif change == "nfe":
+        rows = _read_csv(audit.paths["plan"])
+        for row in rows:
+            if row["experiment_id"] == "nfe_b2_01":
+                row["nfe"] = "7"
+        _write_csv(audit.paths["plan"], rows)
+    elif change == "mel":
+        config_path = run_dir / ".hydra" / "config.yaml"
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        config["data"]["n_mels"] = 99
+        config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    elif change == "cache":
+        (audit.cache / "content" / "p300_005.pt").write_bytes(b"changed")
+    with pytest.raises(ValueError, match="评估身份不一致"):
+        _evaluate(audit, output, base_seed=100, limit=1, experiment_ids=["nfe_b2_01"])
+
+
+def test_unified_resume_expands_limit_without_recomputing(audit, model_boundary, tmp_path):
+    """limit 扩展只补齐缺失样本，原账本保持不变且不重复生成。"""
+    output = tmp_path / "evaluation"
+    _evaluate(audit, output, base_seed=100, limit=1, experiment_ids=["nfe_b2_01"])
+    ledger = output / "evaluation_records.jsonl"
+    first_bytes = ledger.read_bytes()
+    assert len(unified._load_ledger(ledger)) == 1
+    total = len(_read_csv(audit.paths["manifest"]))
+    _evaluate(audit, output, base_seed=100, experiment_ids=["nfe_b2_01"])
+    assert ledger.read_bytes().startswith(first_bytes)
+    assert len(unified._load_ledger(ledger)) == total
+    # 样本 0（seed=100）未被重复生成，仅补齐后续样本。
+    assert 100 not in [seed for seed, _ in model_boundary[-1][2].calls]
+
+
+def test_unified_aggregation_counts_each_experiment_sample_once(audit, model_boundary, tmp_path):
+    """重复账本记录在聚合中被去重，每个实验样本最多出现一次。"""
+    output = tmp_path / "evaluation"
+    _evaluate(audit, output, base_seed=100, limit=2, experiment_ids=["nfe_b2_01"])
+    ledger = output / "evaluation_records.jsonl"
+    records = unified._load_ledger(ledger)
+    assert len(records) == 2
+    unified._append_ledger(ledger, records[0])
+    paths = _evaluate(audit, output, base_seed=100, limit=2, experiment_ids=["nfe_b2_01"])
+    aggregates = _read_csv(paths["aggregate"])
+    assert [int(row["sample_count"]) for row in aggregates] == [2]
+
+
+def test_unified_resume_registers_appended_experiments(audit, model_boundary, tmp_path):
+    output = tmp_path / "evaluation"
+    _evaluate(audit, output, limit=1, experiment_ids=["nfe_b1_01"])
+    _evaluate(audit, output, limit=1, experiment_ids=["nfe_b2_01"])
+    identity = unified._load_identity(output / "evaluation_identity.json")
+    assert set(identity["experiments"]) == {"nfe_b1_01", "nfe_b2_01"}
+    run_dir = _run_dir_for(audit, "nfe_b2_01")
+    (run_dir / "checkpoints" / "epoch_002.ckpt").write_bytes(b"changed")
+    with pytest.raises(ValueError, match="评估身份不一致"):
+        _evaluate(audit, output, limit=1, experiment_ids=["nfe_b2_01"])
+
+
+def test_unified_resume_rejects_changed_generation_config(audit, model_boundary, tmp_path):
+    output = tmp_path / "evaluation"
+    run_dir = _run_dir_for(audit, "nfe_b3_01")
+    config_path = run_dir / ".hydra" / "config.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["model"]["method"]["inference_source_diffusion_time"] = 0.95
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    _evaluate(audit, output, limit=1, experiment_ids=["nfe_b3_01"])
+    config["model"]["method"]["inference_source_diffusion_time"] = 0.1
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="评估身份不一致"):
+        _evaluate(audit, output, limit=1, experiment_ids=["nfe_b3_01"])
+
+
+def test_unified_resume_rejects_records_without_experiment_identity(
+    audit, model_boundary, tmp_path
+):
+    output = tmp_path / "evaluation"
+    _evaluate(audit, output, limit=1, experiment_ids=["nfe_b1_01"])
+    ledger = output / "evaluation_records.jsonl"
+    record = unified._load_ledger(ledger)[0]
+    unified._append_ledger(ledger, {**record, "experiment_id": "nfe_b2_01"})
+    with pytest.raises(ValueError, match="账本缺少实验身份"):
+        _evaluate(audit, output, limit=1, experiment_ids=["nfe_b2_01"])
 
 
 def test_evaluate_sample_aligns_target_and_excludes_generated_padding(tmp_path, monkeypatch):

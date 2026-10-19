@@ -6,11 +6,13 @@ from typing import cast
 import torch
 from torch import nn
 
-from src.models.methods.base import VoiceMethod
+from src.models.methods.base import VoiceMethod, reject_inference_mode_jvp
 
 
 class ConditionalMeanFlow(VoiceMethod):
     """使用停止梯度 JVP 目标学习条件平均速度场。"""
+
+    supports_diagnostics = True
 
     def __init__(
         self,
@@ -67,6 +69,40 @@ class ConditionalMeanFlow(VoiceMethod):
         weights = weights.detach()
         return (weights * sample_mse * sample_counts).sum() / sample_counts.sum().clamp_min(1.0)
 
+    def _diagnostics(
+        self,
+        prediction: torch.Tensor,
+        target: torch.Tensor,
+        instantaneous_velocity: torch.Tensor,
+        jvp_correction: torch.Tensor,
+        target_mask: torch.Tensor,
+        start_times: torch.Tensor,
+        end_times: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        """计算固定采样下未加权的诊断标量；空的非零区间组记为 NaN 而非 0。"""
+        valid = target_mask.unsqueeze(1).to(dtype=prediction.dtype)
+        elements = (valid.sum() * prediction.size(1)).clamp_min(1.0)
+
+        def masked_mean(square: torch.Tensor) -> torch.Tensor:
+            return (square * valid).sum() / elements
+
+        nonzero = (end_times > start_times).view(-1, 1, 1).to(dtype=prediction.dtype) * valid
+        nonzero_elements = nonzero.sum() * prediction.size(1)
+        nonzero_value = ((prediction - target).square() * nonzero).sum() / nonzero_elements.clamp_min(
+            1.0
+        )
+        nonzero_interval_mse = torch.where(
+            nonzero_elements > 0,
+            nonzero_value,
+            torch.full_like(nonzero_value, float("nan")),
+        )
+        return {
+            "raw_meanflow_mse": masked_mean((prediction - target).square()),
+            "velocity_mse": masked_mean((prediction - instantaneous_velocity).square()),
+            "nonzero_interval_mse": nonzero_interval_mse,
+            "jvp_correction_rms": masked_mean(jvp_correction.square()).sqrt(),
+        }
+
     def compute_loss(
         self,
         target_mels: torch.Tensor,
@@ -75,8 +111,12 @@ class ConditionalMeanFlow(VoiceMethod):
         content_lengths: torch.Tensor,
         speaker_features: torch.Tensor,
         generator: torch.Generator | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """返回平均速度损失、预测、JVP 目标和路径状态。"""
+        return_diagnostics: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] | tuple[
+        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]
+    ]:
+        """返回平均速度损失、预测、JVP 目标和路径状态；可选附带诊断标量。"""
+        reject_inference_mode_jvp()
         condition = self.encode_condition(
             content_features, content_lengths, speaker_features, target_mask
         )
@@ -112,9 +152,21 @@ class ConditionalMeanFlow(VoiceMethod):
             )
         shape = (end_times.size(0),) + (1,) * (target_mels.ndim - 1)
         interval = (end_times - start_times).view(shape)
-        target_velocity = (instantaneous_velocity - interval * total_derivative).detach()
+        jvp_correction = interval * total_derivative
+        target_velocity = (instantaneous_velocity - jvp_correction).detach()
         loss = self._mean_flow_loss(predicted_velocity, target_velocity, target_mask)
-        return loss, predicted_velocity, target_velocity, path_samples
+        if not return_diagnostics:
+            return loss, predicted_velocity, target_velocity, path_samples
+        diagnostics = self._diagnostics(
+            predicted_velocity,
+            target_velocity,
+            instantaneous_velocity,
+            jvp_correction,
+            target_mask,
+            start_times,
+            end_times,
+        )
+        return loss, predicted_velocity, target_velocity, path_samples, diagnostics
 
     @torch.no_grad()
     def sample(self, condition, target_mask=None, integration_steps=None):

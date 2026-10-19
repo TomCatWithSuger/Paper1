@@ -5,9 +5,12 @@
 # ====================
 
 import csv
+import hashlib
 import json
 import math
+import subprocess
 import time
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean, median
@@ -18,6 +21,9 @@ import torch
 import torch.nn.functional as F
 import yaml
 from omegaconf import OmegaConf
+from omegaconf.base import ContainerMetadata, Metadata
+from omegaconf.listconfig import ListConfig
+from omegaconf.nodes import AnyNode
 
 from src.data.components.vctk_splits import (
     UnseenSpeakerSentenceSplit,
@@ -39,6 +45,21 @@ class EvaluationSpec:
     model: str
     nfe: int
     run_dir: Path
+
+
+# checkpoint 内含 OmegaConf 保存的划分对象，weights_only 加载需要以下白名单
+CHECKPOINT_SAFE_GLOBALS = (
+    UnseenSpeakerSentenceSplit,
+    ListConfig,
+    ContainerMetadata,
+    Any,
+    list,
+    defaultdict,
+    dict,
+    int,
+    AnyNode,
+    Metadata,
+)
 
 
 PER_SAMPLE_FIELDS = (
@@ -175,6 +196,131 @@ def _validate_feature_cache(manifest: Sequence[dict[str, str]], feature_cache_di
         raise FileNotFoundError(f"统一评估缺少 {len(missing)} 个缓存文件:\n{preview}{remainder}")
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _checkpoint_sha256(run_dir: Path) -> str:
+    return _sha256_file(_best_checkpoint(run_dir))
+
+
+def _feature_cache_fingerprint(
+    manifest: Sequence[dict[str, str]], feature_cache_dir: Path
+) -> str:
+    digest = hashlib.sha256()
+    utterances = sorted(
+        {
+            utterance_id
+            for row in manifest
+            for utterance_id in (row["source_id"], row["reference_id"])
+        }
+    )
+    for utterance_id in utterances:
+        for kind in ("content", "speaker"):
+            path = feature_cache_dir / kind / f"{utterance_id}.pt"
+            if path.is_file():
+                stat = path.stat()
+                digest.update(f"{path.name}:{stat.st_size}:{stat.st_mtime_ns}\n".encode())
+    return digest.hexdigest()
+
+
+def _source_version() -> str:
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        ).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        ).stdout.strip()
+        return f"{commit}{'-dirty' if dirty else ''}"
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+
+
+def _build_run_identity(
+    specs: Sequence[EvaluationSpec],
+    manifest_path: Path,
+    manifest: Sequence[dict[str, str]],
+    feature_cache_dir: Path,
+    first_config: dict[str, Any],
+    device_name: str,
+    base_seed: int,
+) -> dict[str, Any]:
+    data = first_config["data"]
+    experiments = {
+        spec.experiment_id: {
+            "model": spec.model,
+            "nfe": spec.nfe,
+            "checkpoint_sha256": _checkpoint_sha256(spec.run_dir),
+            "config_sha256": hashlib.sha256(
+                json.dumps(_model_config(spec.run_dir), sort_keys=True).encode("utf-8")
+            ).hexdigest(),
+        }
+        for spec in specs
+    }
+    return {
+        "source_version": _source_version(),
+        "manifest_sha256": _sha256_file(manifest_path),
+        "base_seed": base_seed,
+        "timing_device": device_name,
+        "timing_scope": "cached_condition_to_mel",
+        "mel_params": {
+            "sample_rate": int(data["sample_rate"]),
+            "n_fft": int(data["n_fft"]),
+            "win_length": int(data["win_length"]),
+            "hop_length": int(data["hop_length"]),
+            "n_mels": int(data["n_mels"]),
+            "f_min": float(data["f_min"]),
+            "f_max": float(data["f_max"]),
+            "log_mel_floor": float(data["log_mel_floor"]),
+        },
+        "feature_cache_fingerprint": _feature_cache_fingerprint(manifest, feature_cache_dir),
+        "experiments": experiments,
+    }
+
+
+def _identity_mismatch(existing: dict[str, Any], current: dict[str, Any]) -> list[str]:
+    differences = [
+        key
+        for key in sorted(set(existing) | set(current))
+        if key != "experiments" and existing.get(key) != current.get(key)
+    ]
+    existing_experiments = existing.get("experiments", {})
+    current_experiments = current.get("experiments", {})
+    for experiment_id in sorted(current_experiments):
+        if (
+            experiment_id in existing_experiments
+            and existing_experiments[experiment_id] != current_experiments[experiment_id]
+        ):
+            differences.append(f"experiments.{experiment_id}")
+    return differences
+
+
+def _load_identity(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"无效评估身份文件: {path}")
+    return value
+
+
+def _write_identity(path: Path, identity: dict[str, Any]) -> None:
+    path.write_text(json.dumps(identity, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def _model_config(run_dir: Path) -> dict[str, Any]:
     value = yaml.safe_load((run_dir / ".hydra" / "config.yaml").read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -194,7 +340,7 @@ def _best_checkpoint(run_dir: Path) -> Path:
 def _load_model(run_dir: Path, device: torch.device) -> tuple[torch.nn.Module, dict[str, Any]]:
     config = _model_config(run_dir)
     model = hydra.utils.instantiate(OmegaConf.create(config["model"]))
-    with torch.serialization.safe_globals([UnseenSpeakerSentenceSplit]):
+    with torch.serialization.safe_globals(list(CHECKPOINT_SAFE_GLOBALS)):
         checkpoint = torch.load(_best_checkpoint(run_dir), map_location="cpu", weights_only=True)
     if not isinstance(checkpoint, dict) or not isinstance(checkpoint.get("state_dict"), dict):
         raise ValueError(f"无效 Lightning checkpoint: {run_dir}")
@@ -539,24 +685,56 @@ def _execute(
 
     first_config = _model_config(specs[0].run_dir)
     microphone = str(first_config["data"]["microphone"])
-    manifest, by_id = _load_manifest_samples(
-        manifest_path.expanduser().resolve(), vctk_root.expanduser().resolve(), microphone
+    resolved_manifest_path = manifest_path.expanduser().resolve()
+    full_manifest, by_id = _load_manifest_samples(
+        resolved_manifest_path, vctk_root.expanduser().resolve(), microphone
     )
-    if limit is not None:
-        if limit <= 0:
-            raise ValueError("limit 必须为正数")
-        manifest = manifest[:limit]
+    if limit is not None and limit <= 0:
+        raise ValueError("limit 必须为正数")
+
     resolved_feature_cache = feature_cache_dir.expanduser().resolve()
+    manifest = full_manifest if limit is None else full_manifest[:limit]
     _validate_feature_cache(manifest, resolved_feature_cache)
 
+    identity_path = output_dir / "evaluation_identity.json"
+    current_identity = _build_run_identity(
+        specs,
+        resolved_manifest_path,
+        full_manifest,
+        resolved_feature_cache,
+        first_config,
+        device_name,
+        base_seed,
+    )
     records = _load_ledger(ledger_path)
-    completed = {(str(record["experiment_id"]), str(record["source_id"])) for record in records}
+    existing_identity = _load_identity(identity_path)
+    if existing_identity is None:
+        if records:
+            raise ValueError("旧评估账本缺少身份信息，拒绝续跑以避免误复用历史结果")
+        _write_identity(identity_path, current_identity)
+    else:
+        differences = _identity_mismatch(existing_identity, current_identity)
+        if differences:
+            raise ValueError(f"评估身份不一致，拒绝续跑: {', '.join(differences)}")
+        registered = existing_identity.get("experiments", {})
+        unregistered = {str(record["experiment_id"]) for record in records} - set(registered)
+        if unregistered:
+            raise ValueError(f"评估账本缺少实验身份，拒绝续跑: {', '.join(sorted(unregistered))}")
+        current_identity["experiments"] = {**registered, **current_identity["experiments"]}
+        _write_identity(identity_path, current_identity)
+
+    completed = {
+        (str(record["experiment_id"]), str(record["source_id"]), str(record["reference_id"]))
+        for record in records
+    }
     for spec in specs:
         model, config = _load_model(spec.run_dir, device)
         collator = _collator(config)
         sample_rate = int(config["data"]["sample_rate"])
         pending_rows = [
-            row for row in manifest if (spec.experiment_id, row["source_id"]) not in completed
+            row
+            for row in manifest
+            if (spec.experiment_id, row["source_id"], row["reference_id"]) not in completed
         ]
         if pending_rows:
             warm_batch, _, _ = _prepare_pair(
@@ -564,7 +742,7 @@ def _execute(
             )
             _warm_up(model, warm_batch, spec.nfe, base_seed - 1, device)
         for row in manifest:
-            key = (spec.experiment_id, row["source_id"])
+            key = (spec.experiment_id, row["source_id"], row["reference_id"])
             if key in completed:
                 continue
             source_batch, target_mel, audio_samples = _prepare_pair(
@@ -597,6 +775,20 @@ def _execute(
         for record in records
         if record["experiment_id"] in relevant_ids and record["source_id"] in relevant_sources
     ]
+    # 每个 (实验, 源, 参考) 在结果中最多保留最早写入的一条，避免重复计入聚合。
+    deduped_records: list[dict[str, Any]] = []
+    seen_keys: set[tuple[str, str, str]] = set()
+    for record in selected_records:
+        identity_key = (
+            str(record["experiment_id"]),
+            str(record["source_id"]),
+            str(record["reference_id"]),
+        )
+        if identity_key in seen_keys:
+            continue
+        seen_keys.add(identity_key)
+        deduped_records.append(record)
+    selected_records = deduped_records
     selected_records.sort(key=lambda row: (str(row["experiment_id"]), int(row["sample_index"])))
     aggregates = _aggregate(selected_records)
     differences, best_b1 = _difference_rows(selected_records, aggregates)

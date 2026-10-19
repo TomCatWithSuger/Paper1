@@ -1,5 +1,6 @@
 """VCTK dataset and Lightning data module."""
 
+from itertools import zip_longest
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 
@@ -347,6 +348,7 @@ class VCTKDataModule(LightningDataModule):
         batch_size: int = 16,
         num_workers: int = 0,
         pin_memory: bool = False,
+        interleave_evaluation_speakers: bool = False,
     ) -> None:
         super().__init__()
         if microphone not in {"mic1", "mic2"}:
@@ -424,6 +426,16 @@ class VCTKDataModule(LightningDataModule):
         randomize: bool,
         reference_mode: Literal["same_speaker", "different_speaker"] = "same_speaker",
     ) -> VCTKDataset:
+        if not randomize and self.hparams.interleave_evaluation_speakers:
+            grouped: Dict[str, List[VCTKSample]] = {}
+            for sample in samples:
+                grouped.setdefault(sample.speaker_id, []).append(sample)
+            samples = [
+                sample
+                for row in zip_longest(*(grouped[identity] for identity in sorted(grouped)))
+                for sample in row
+                if sample is not None
+            ]
         return VCTKDataset(
             samples=samples,
             sample_rate=self.sample_rate,

@@ -4,8 +4,15 @@ optimizer:
   _target_: torch.optim.Adam
   _partial_: true
   lr: 0.0002
+  betas: [0.5, 0.9]
 
 scheduler: null
+
+warmup_steps: 10000
+
+validation_sampling_count: 4
+test_sampling_count: 8
+evaluation_seed: 12345
 
 method:
   _target_: src.models.methods.generative.flow.cfm.conditional_flow_matching.ConditionalFlowMatching
