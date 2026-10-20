@@ -1,106 +1,63 @@
 """在固定 VCTK 清单上统一评估 B1、B2、B3 的 Mel 质量与推理效率。"""
 
+
 # ====================
 # 1. Imports
 # ====================
 
-import csv
-import hashlib
-import json
-import math
-import subprocess
-import time
-from collections import defaultdict
-from dataclasses import dataclass
-from pathlib import Path
-from statistics import mean, median
-from typing import Any, Iterable, Sequence
 
-import hydra
+import math
+import time
+from pathlib import Path
+from typing import Any, Sequence
+
 import torch
 import torch.nn.functional as F
-import yaml
-from omegaconf import OmegaConf
-from omegaconf.base import ContainerMetadata, Metadata
-from omegaconf.listconfig import ListConfig
-from omegaconf.nodes import AnyNode
 
-from src.data.components.vctk_splits import (
-    UnseenSpeakerSentenceSplit,
-    VCTKSample,
-    discover_vctk_samples,
+from src.analysis.unified.checkpoints import (
+    CHECKPOINT_SAFE_GLOBALS as CHECKPOINT_SAFE_GLOBALS,
+    EvaluationSpec as EvaluationSpec,
+    PER_SAMPLE_FIELDS as PER_SAMPLE_FIELDS,
+    _best_checkpoint as _best_checkpoint,
+    _load_model as _load_model,
+    _model_config as _model_config,
 )
-from src.data.vctk_datamodule import VCTKCollator, VCTKDataset
-
-# ====================
-# 2. Definitions
-# ====================
-
-
-@dataclass(frozen=True)
-class EvaluationSpec:
-    """定义一个 checkpoint 与 NFE 组合。"""
-
-    experiment_id: str
-    model: str
-    nfe: int
-    run_dir: Path
-
-
-# checkpoint 内含 OmegaConf 保存的划分对象，weights_only 加载需要以下白名单
-CHECKPOINT_SAFE_GLOBALS = (
-    UnseenSpeakerSentenceSplit,
-    ListConfig,
-    ContainerMetadata,
-    Any,
-    list,
-    defaultdict,
-    dict,
-    int,
-    AnyNode,
-    Metadata,
+from src.analysis.unified.data import (
+    _collator as _collator,
+    _dataset as _dataset,
+    _load_manifest_samples as _load_manifest_samples,
+    _load_specs as _load_specs,
+    _prepare_pair as _prepare_pair,
+    _validate_feature_cache as _validate_feature_cache,
 )
-
-
-PER_SAMPLE_FIELDS = (
-    "experiment_id",
-    "model",
-    "nfe",
-    "sample_index",
-    "source_id",
-    "source_speaker_id",
-    "reference_id",
-    "reference_speaker_id",
-    "sentence_id",
-    "text_length",
-    "source_frames",
-    "target_frames",
-    "audio_seconds",
-    "seed",
-    "mel_l1",
-    "mel_l2_rmse",
-    "mel_mse",
-    "latency_ms",
-    "rtf",
-    "generated_path",
+from src.analysis.unified.identity import (
+    _build_run_identity as _build_run_identity,
+    _checkpoint_sha256 as _checkpoint_sha256,
+    _feature_cache_fingerprint as _feature_cache_fingerprint,
+    _identity_mismatch as _identity_mismatch,
+    _load_identity as _load_identity,
+    _sha256_file as _sha256_file,
+    _source_version as _source_version,
+    _write_identity as _write_identity,
+)
+from src.analysis.unified.records import (
+    _append_ledger as _append_ledger,
+    _load_ledger as _load_ledger,
+    _read_csv as _read_csv,
+    _write_csv as _write_csv,
+)
+from src.analysis.unified.reporting import (
+    _aggregate as _aggregate,
+    _difference_rows as _difference_rows,
+    _mean_or_nan as _mean_or_nan,
+    _report as _report,
 )
 
 
 # ====================
-# 3. Utilities
+# 4. Internal Functions
+# 内部业务实现
 # ====================
-
-
-def _read_csv(path: Path) -> list[dict[str, str]]:
-    with path.open("r", encoding="utf-8", newline="") as file:
-        return list(csv.DictReader(file))
-
-
-def _write_csv(path: Path, rows: Sequence[dict[str, Any]], fields: Sequence[str]) -> None:
-    with path.open("w", encoding="utf-8", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=fields)
-        writer.writeheader()
-        writer.writerows(rows)
 
 
 def _synchronize(device: torch.device) -> None:
@@ -128,277 +85,6 @@ def _align_target(target: torch.Tensor, frames: int) -> torch.Tensor:
         mode="linear",
         align_corners=False,
     ).squeeze(0)
-
-
-def _mean_or_nan(values: Iterable[float]) -> float:
-    items = list(values)
-    return mean(items) if items else math.nan
-
-
-# ====================
-# 4. Internal Functions
-# ====================
-
-
-def _load_specs(plan_path: Path) -> list[EvaluationSpec]:
-    specs = []
-    for row in _read_csv(plan_path):
-        if row["status"] != "待运行统一转换评估":
-            continue
-        run_dir = Path(row["run_dir"]).expanduser().resolve()
-        specs.append(
-            EvaluationSpec(
-                experiment_id=row["experiment_id"],
-                model=row["model"],
-                nfe=int(row["nfe"]),
-                run_dir=run_dir,
-            )
-        )
-    if not specs:
-        raise ValueError(f"实验计划中没有待评估项目: {plan_path}")
-    return specs
-
-
-def _load_manifest_samples(
-    manifest_path: Path,
-    vctk_root: Path,
-    microphone: str,
-) -> tuple[list[dict[str, str]], dict[str, VCTKSample]]:
-    rows = _read_csv(manifest_path)
-    samples = discover_vctk_samples(vctk_root, microphone)
-    by_id = {sample.utterance_id: sample for sample in samples}
-    missing = sorted(
-        utterance_id
-        for row in rows
-        for utterance_id in (row["source_id"], row["reference_id"])
-        if utterance_id not in by_id
-    )
-    if missing:
-        raise FileNotFoundError(f"测试清单样本不存在: {', '.join(sorted(set(missing)))}")
-    return rows, by_id
-
-
-def _validate_feature_cache(manifest: Sequence[dict[str, str]], feature_cache_dir: Path) -> None:
-    utterance_ids = {
-        utterance_id
-        for row in manifest
-        for utterance_id in (row["source_id"], row["reference_id"])
-    }
-    missing = [
-        f"{kind}/{utterance_id}.pt"
-        for kind in ("content", "speaker")
-        for utterance_id in sorted(utterance_ids)
-        if not (feature_cache_dir / kind / f"{utterance_id}.pt").is_file()
-    ]
-    if missing:
-        preview = "\n".join(f"- {path}" for path in missing[:20])
-        remainder = "" if len(missing) <= 20 else f"\n- 其余 {len(missing) - 20} 个"
-        raise FileNotFoundError(f"统一评估缺少 {len(missing)} 个缓存文件:\n{preview}{remainder}")
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _checkpoint_sha256(run_dir: Path) -> str:
-    return _sha256_file(_best_checkpoint(run_dir))
-
-
-def _feature_cache_fingerprint(
-    manifest: Sequence[dict[str, str]], feature_cache_dir: Path
-) -> str:
-    digest = hashlib.sha256()
-    utterances = sorted(
-        {
-            utterance_id
-            for row in manifest
-            for utterance_id in (row["source_id"], row["reference_id"])
-        }
-    )
-    for utterance_id in utterances:
-        for kind in ("content", "speaker"):
-            path = feature_cache_dir / kind / f"{utterance_id}.pt"
-            if path.is_file():
-                stat = path.stat()
-                digest.update(f"{path.name}:{stat.st_size}:{stat.st_mtime_ns}\n".encode())
-    return digest.hexdigest()
-
-
-def _source_version() -> str:
-    try:
-        commit = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=5,
-        ).stdout.strip()
-        dirty = subprocess.run(
-            ["git", "status", "--porcelain"],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=5,
-        ).stdout.strip()
-        return f"{commit}{'-dirty' if dirty else ''}"
-    except (OSError, subprocess.SubprocessError):
-        return "unknown"
-
-
-def _build_run_identity(
-    specs: Sequence[EvaluationSpec],
-    manifest_path: Path,
-    manifest: Sequence[dict[str, str]],
-    feature_cache_dir: Path,
-    first_config: dict[str, Any],
-    device_name: str,
-    base_seed: int,
-) -> dict[str, Any]:
-    data = first_config["data"]
-    experiments = {
-        spec.experiment_id: {
-            "model": spec.model,
-            "nfe": spec.nfe,
-            "checkpoint_sha256": _checkpoint_sha256(spec.run_dir),
-            "config_sha256": hashlib.sha256(
-                json.dumps(_model_config(spec.run_dir), sort_keys=True).encode("utf-8")
-            ).hexdigest(),
-        }
-        for spec in specs
-    }
-    return {
-        "source_version": _source_version(),
-        "manifest_sha256": _sha256_file(manifest_path),
-        "base_seed": base_seed,
-        "timing_device": device_name,
-        "timing_scope": "cached_condition_to_mel",
-        "mel_params": {
-            "sample_rate": int(data["sample_rate"]),
-            "n_fft": int(data["n_fft"]),
-            "win_length": int(data["win_length"]),
-            "hop_length": int(data["hop_length"]),
-            "n_mels": int(data["n_mels"]),
-            "f_min": float(data["f_min"]),
-            "f_max": float(data["f_max"]),
-            "log_mel_floor": float(data["log_mel_floor"]),
-        },
-        "feature_cache_fingerprint": _feature_cache_fingerprint(manifest, feature_cache_dir),
-        "experiments": experiments,
-    }
-
-
-def _identity_mismatch(existing: dict[str, Any], current: dict[str, Any]) -> list[str]:
-    differences = [
-        key
-        for key in sorted(set(existing) | set(current))
-        if key != "experiments" and existing.get(key) != current.get(key)
-    ]
-    existing_experiments = existing.get("experiments", {})
-    current_experiments = current.get("experiments", {})
-    for experiment_id in sorted(current_experiments):
-        if (
-            experiment_id in existing_experiments
-            and existing_experiments[experiment_id] != current_experiments[experiment_id]
-        ):
-            differences.append(f"experiments.{experiment_id}")
-    return differences
-
-
-def _load_identity(path: Path) -> dict[str, Any] | None:
-    if not path.is_file():
-        return None
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError(f"无效评估身份文件: {path}")
-    return value
-
-
-def _write_identity(path: Path, identity: dict[str, Any]) -> None:
-    path.write_text(json.dumps(identity, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def _model_config(run_dir: Path) -> dict[str, Any]:
-    value = yaml.safe_load((run_dir / ".hydra" / "config.yaml").read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError(f"无效 Hydra 配置: {run_dir}")
-    return value
-
-
-def _best_checkpoint(run_dir: Path) -> Path:
-    checkpoints = sorted(
-        path for path in (run_dir / "checkpoints").glob("*.ckpt") if path.name != "last.ckpt"
-    )
-    if len(checkpoints) != 1:
-        raise ValueError(f"期望唯一最佳 checkpoint，实际找到 {len(checkpoints)} 个: {run_dir}")
-    return checkpoints[0]
-
-
-def _load_model(run_dir: Path, device: torch.device) -> tuple[torch.nn.Module, dict[str, Any]]:
-    config = _model_config(run_dir)
-    model = hydra.utils.instantiate(OmegaConf.create(config["model"]))
-    with torch.serialization.safe_globals(list(CHECKPOINT_SAFE_GLOBALS)):
-        checkpoint = torch.load(_best_checkpoint(run_dir), map_location="cpu", weights_only=True)
-    if not isinstance(checkpoint, dict) or not isinstance(checkpoint.get("state_dict"), dict):
-        raise ValueError(f"无效 Lightning checkpoint: {run_dir}")
-    model.load_state_dict(checkpoint["state_dict"], strict=True)
-    model.eval().to(device)
-    return model, config
-
-
-def _collator(config: dict[str, Any]) -> VCTKCollator:
-    data = config["data"]
-    return VCTKCollator(
-        sample_rate=int(data["sample_rate"]),
-        n_fft=int(data["n_fft"]),
-        win_length=int(data["win_length"]),
-        hop_length=int(data["hop_length"]),
-        n_mels=int(data["n_mels"]),
-        f_min=float(data["f_min"]),
-        f_max=float(data["f_max"]),
-        log_mel_floor=float(data["log_mel_floor"]),
-    )
-
-
-def _dataset(
-    samples: Sequence[VCTKSample],
-    config: dict[str, Any],
-    feature_cache_dir: Path,
-) -> VCTKDataset:
-    data = config["data"]
-    return VCTKDataset(
-        samples=samples,
-        sample_rate=int(data["sample_rate"]),
-        max_duration_seconds=float(data["max_duration_seconds"]),
-        randomize=False,
-        reference_mode="different_speaker",
-        feature_cache_dir=feature_cache_dir,
-    )
-
-
-def _prepare_pair(
-    row: dict[str, str],
-    by_id: dict[str, VCTKSample],
-    config: dict[str, Any],
-    feature_cache_dir: Path,
-    collator: VCTKCollator,
-) -> tuple[dict[str, Any], torch.Tensor, int]:
-    source = by_id[row["source_id"]]
-    reference = by_id[row["reference_id"]]
-    pair_dataset = _dataset((source, reference), config, feature_cache_dir)
-    source_item = pair_dataset[0]
-    if source_item["reference_id"] != reference.utterance_id:
-        raise ValueError(f"固定参考不匹配: {source.utterance_id} -> {source_item['reference_id']}")
-    reference_item = pair_dataset[1]
-    source_batch = collator([source_item])
-    reference_batch = collator([reference_item])
-    target_frames = int(reference_batch["mel_lengths"][0].item())
-    target_mel = reference_batch["mel_spectrograms"][0, :, :target_frames]
-    audio_samples = int(source_batch["lengths"][0].item())
-    return source_batch, target_mel, audio_samples
 
 
 def _generate(
@@ -501,154 +187,6 @@ def _evaluate_sample(
         "rtf": latency_seconds / audio_seconds,
         "generated_path": str(generated_path),
     }
-
-
-def _load_ledger(path: Path) -> list[dict[str, Any]]:
-    if not path.is_file():
-        return []
-    records = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            value = json.loads(line)
-            if isinstance(value, dict):
-                records.append(value)
-    return records
-
-
-def _append_ledger(path: Path, record: dict[str, Any]) -> None:
-    with path.open("a", encoding="utf-8") as file:
-        file.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-
-def _aggregate(records: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-    grouped: dict[str, list[dict[str, Any]]] = {}
-    for record in records:
-        grouped.setdefault(str(record["experiment_id"]), []).append(record)
-    rows = []
-    for experiment_id, items in sorted(grouped.items()):
-        first = items[0]
-        rows.append(
-            {
-                "experiment_id": experiment_id,
-                "model": first["model"],
-                "nfe": first["nfe"],
-                "sample_count": len(items),
-                "mel_l1_mean": _mean_or_nan(float(item["mel_l1"]) for item in items),
-                "mel_l1_median": median(float(item["mel_l1"]) for item in items),
-                "mel_l2_rmse_mean": _mean_or_nan(float(item["mel_l2_rmse"]) for item in items),
-                "latency_ms_mean": _mean_or_nan(float(item["latency_ms"]) for item in items),
-                "rtf_mean": _mean_or_nan(float(item["rtf"]) for item in items),
-            }
-        )
-    return rows
-
-
-def _difference_rows(
-    records: Sequence[dict[str, Any]],
-    aggregates: Sequence[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], str | None]:
-    complete_b1 = [
-        row for row in aggregates if row["model"] == "B1" and int(row["sample_count"]) == 100
-    ]
-    b2_ids = {
-        str(row["experiment_id"])
-        for row in aggregates
-        if row["model"] == "B2" and int(row["sample_count"]) == 100
-    }
-    if not complete_b1 or not b2_ids:
-        return [], None
-    best_b1 = min(complete_b1, key=lambda row: float(row["mel_l1_mean"]))
-    best_id = str(best_b1["experiment_id"])
-    b2_id = sorted(b2_ids)[0]
-    indexed = {
-        (str(record["experiment_id"]), str(record["source_id"])): record for record in records
-    }
-    rows = []
-    for source_id in sorted(
-        source
-        for experiment_id, source in indexed
-        if experiment_id == best_id and (b2_id, source) in indexed
-    ):
-        b1 = indexed[(best_id, source_id)]
-        b2 = indexed[(b2_id, source_id)]
-        delta_l1 = float(b2["mel_l1"]) - float(b1["mel_l1"])
-        delta_l2 = float(b2["mel_l2_rmse"]) - float(b1["mel_l2_rmse"])
-        rows.append(
-            {
-                "source_id": source_id,
-                "source_speaker_id": b1["source_speaker_id"],
-                "reference_id": b1["reference_id"],
-                "reference_speaker_id": b1["reference_speaker_id"],
-                "sentence_id": b1["sentence_id"],
-                "text_length": b1["text_length"],
-                "b1_experiment_id": best_id,
-                "b1_mel_l1": b1["mel_l1"],
-                "b2_mel_l1": b2["mel_l1"],
-                "delta_mel_l1": delta_l1,
-                "delta_mel_l2_rmse": delta_l2,
-                "category": "提升" if delta_l1 < 0 else "下降" if delta_l1 > 0 else "不变",
-            }
-        )
-    return rows, best_id
-
-
-def _report(
-    device: torch.device,
-    records: Sequence[dict[str, Any]],
-    aggregates: Sequence[dict[str, Any]],
-    differences: Sequence[dict[str, Any]],
-    best_b1: str | None,
-) -> str:
-    lines = [
-        "# B1/B2/B3 统一生成评估",
-        "",
-        f"- 设备：`{device}`",
-        "- Mel 对齐：将参考目标 Mel 线性插值到源语音帧数。",
-        "- latency/RTF 范围：缓存条件特征到生成 Mel，不包含离线特征提取与声码器。",
-        "- CER/WER 与生成语音说话人相似度：当前没有声码器，未计算。",
-        "",
-        "## 聚合结果",
-        "",
-        "| 实验 | 模型 | NFE | 样本数 | Mel L1 | Mel L2 RMSE | latency ms | RTF |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
-    ]
-    for row in aggregates:
-        lines.append(
-            f"| {row['experiment_id']} | {row['model']} | {row['nfe']} | "
-            f"{row['sample_count']} | {float(row['mel_l1_mean']):.6f} | "
-            f"{float(row['mel_l2_rmse_mean']):.6f} | "
-            f"{float(row['latency_ms_mean']):.3f} | {float(row['rtf_mean']):.6f} |"
-        )
-    lines.extend(["", "## B1 → B2 样本差异", ""])
-    if not differences:
-        lines.append("完整 100 组结果尚未产生，暂不选择 B1 最优 NFE，也不输出样本差异结论。")
-    else:
-        improved = sum(row["category"] == "提升" for row in differences)
-        declined = sum(row["category"] == "下降" for row in differences)
-        unchanged = len(differences) - improved - declined
-        lines.extend(
-            [
-                f"按平均 Mel L1 选择的 B1 基线为 `{best_b1}`。",
-                f"B2 相对该基线：提升 {improved}，下降 {declined}，不变 {unchanged}。",
-                "逐样本结果见 `b1_b2_sample_differences.csv`。",
-            ]
-        )
-    lines.extend(
-        [
-            "",
-            "## 结论边界",
-            "",
-            "Mel 距离可用于检查声学重构趋势，但不能替代 CER/WER、说话人相似度或 MOS。",
-            "只有接入统一声码器并补全语音域指标后，才能回答 MeanFlow 是否适合 VC。",
-            "",
-        ]
-    )
-    return "\n".join(lines)
-
-
-# ====================
-# 5. Core Logic
-# ====================
 
 
 def _execute(
@@ -843,6 +381,7 @@ def _execute(
 
 # ====================
 # 6. Public API
+# 对外提供的函数
 # ====================
 
 
