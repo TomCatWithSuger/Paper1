@@ -681,6 +681,7 @@ def test_unified_resume_registers_appended_experiments(audit, model_boundary, tm
     _evaluate(audit, output, limit=1, experiment_ids=["nfe_b1_01"])
     _evaluate(audit, output, limit=1, experiment_ids=["nfe_b2_01"])
     identity = unified._load_identity(output / "evaluation_identity.json")
+    assert identity is not None
     assert set(identity["experiments"]) == {"nfe_b1_01", "nfe_b2_01"}
     run_dir = _run_dir_for(audit, "nfe_b2_01")
     (run_dir / "checkpoints" / "epoch_002.ckpt").write_bytes(b"changed")
