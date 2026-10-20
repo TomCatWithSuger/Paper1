@@ -88,9 +88,9 @@ class ConditionalMeanFlow(VoiceMethod):
 
         nonzero = (end_times > start_times).view(-1, 1, 1).to(dtype=prediction.dtype) * valid
         nonzero_elements = nonzero.sum() * prediction.size(1)
-        nonzero_value = ((prediction - target).square() * nonzero).sum() / nonzero_elements.clamp_min(
-            1.0
-        )
+        nonzero_value = (
+            (prediction - target).square() * nonzero
+        ).sum() / nonzero_elements.clamp_min(1.0)
         nonzero_interval_mse = torch.where(
             nonzero_elements > 0,
             nonzero_value,
@@ -112,9 +112,10 @@ class ConditionalMeanFlow(VoiceMethod):
         speaker_features: torch.Tensor,
         generator: torch.Generator | None = None,
         return_diagnostics: bool = False,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] | tuple[
-        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]
-    ]:
+    ) -> (
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+        | tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]
+    ):
         """返回平均速度损失、预测、JVP 目标和路径状态；可选附带诊断标量。"""
         reject_inference_mode_jvp()
         condition = self.encode_condition(

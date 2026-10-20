@@ -1,6 +1,5 @@
 """计算文本错误率、基频和能量轮廓指标。"""
 
-
 # ====================
 # 1. Imports
 # ====================
@@ -22,7 +21,6 @@ from src.analysis.vocoder.definitions import (
     F0_FREQ_LOW,
     SAMPLE_RATE,
 )
-
 
 # ====================
 # 4. Internal Functions
@@ -116,9 +114,7 @@ def _f0_contour(waveform: torch.Tensor, sample_rate: int) -> torch.Tensor:
     )
 
 
-def _contour_metrics(
-    generated: torch.Tensor, reference: torch.Tensor
-) -> dict[str, float]:
+def _contour_metrics(generated: torch.Tensor, reference: torch.Tensor) -> dict[str, float]:
     """计算 F0 与能量轮廓指标（生成 vs 参考）。"""
     gen_f0 = _resample_contour(_f0_contour(generated, SAMPLE_RATE), CONTOUR_POINTS)
     ref_f0 = _resample_contour(_f0_contour(reference, SAMPLE_RATE), CONTOUR_POINTS)

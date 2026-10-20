@@ -28,7 +28,9 @@ def test_vctk_evaluation_interleaving_preserves_samples(vctk_data_dir: Path) -> 
     after = [sample.utterance_id for sample in interleaved.data_test.samples]
     assert sorted(before) == sorted(after)
     assert len(after) == len(set(after))
-    assert interleaved.data_test.samples[0].speaker_id != interleaved.data_test.samples[1].speaker_id
+    assert (
+        interleaved.data_test.samples[0].speaker_id != interleaved.data_test.samples[1].speaker_id
+    )
     repeated = VCTKDataModule(**options, interleave_evaluation_speakers=True)
     repeated.setup("test")
     assert after == [sample.utterance_id for sample in repeated.data_test.samples]

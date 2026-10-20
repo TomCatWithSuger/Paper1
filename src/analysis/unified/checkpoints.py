@@ -1,6 +1,5 @@
 """定义评估任务并安全加载模型检查点。"""
 
-
 # ====================
 # 1. Imports
 # ====================
@@ -20,7 +19,6 @@ from omegaconf.listconfig import ListConfig
 from omegaconf.nodes import AnyNode
 
 from src.data.components.vctk_splits import UnseenSpeakerSentenceSplit
-
 
 # ====================
 # 2. Definitions

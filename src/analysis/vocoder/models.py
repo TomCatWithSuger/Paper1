@@ -1,6 +1,5 @@
 """加载本地声码器、语音识别与说话人评分模型。"""
 
-
 # ====================
 # 1. Imports
 # ====================
@@ -12,14 +11,13 @@ from typing import Any, Callable, cast
 import torch
 import torchaudio
 
-from src.models.components.conditioning.meanvc import SpeakerEncoder
 from src.analysis.vocoder.definitions import ASR_SAMPLE_RATE, SAMPLE_RATE
 from src.analysis.vocoder.metrics import (
     _char_error_rate,
     _normalize_text,
     _word_error_rate,
 )
-
+from src.models.components.conditioning.meanvc import SpeakerEncoder
 
 # ====================
 # 4. Internal Functions
@@ -29,9 +27,9 @@ from src.analysis.vocoder.metrics import (
 
 def _load_vocos(config_path: Path, weights_path: Path) -> Any:
     """本地加载仅用于 decode 的 Vocos，不提供原始波形特征提取。"""
+    import yaml
     from vocos.feature_extractors import FeatureExtractor
     from vocos.pretrained import Vocos, instantiate_class
-    import yaml
 
     with config_path.open("r", encoding="utf-8") as file:
         config = yaml.safe_load(file)
@@ -56,11 +54,21 @@ class _AsrScorer:
     """使用 Whisper 提取转写文本并计算 WER/CER。"""
 
     def __init__(self, model_dir: Path, device: torch.device) -> None:
+        model_dir = model_dir.expanduser().resolve()
+        if not model_dir.is_dir():
+            raise FileNotFoundError(f"Whisper 本地模型目录不存在: {model_dir}")
+
         from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
-        self.processor = WhisperProcessor.from_pretrained(str(model_dir))
-        self.model: WhisperForConditionalGeneration = WhisperForConditionalGeneration.from_pretrained(
-            str(model_dir)
+        self.processor = (
+            WhisperProcessor.from_pretrained(  # nosec B615 - 已校验本地目录并禁止联网下载
+                str(model_dir), local_files_only=True
+            )
+        )
+        self.model: WhisperForConditionalGeneration = (
+            WhisperForConditionalGeneration.from_pretrained(  # nosec B615 - 已校验本地目录并禁止联网下载
+                str(model_dir), local_files_only=True
+            )
         )
         cast(torch.nn.Module, self.model).to(device)
         self.model.eval()
@@ -72,9 +80,7 @@ class _AsrScorer:
     def transcribe(self, waveform: torch.Tensor) -> str:
         """转写单条波形（内部重采样到 16kHz）。"""
         audio = torchaudio.functional.resample(waveform.cpu(), SAMPLE_RATE, ASR_SAMPLE_RATE)
-        inputs = self.processor(
-            audio.numpy(), sampling_rate=ASR_SAMPLE_RATE, return_tensors="pt"
-        )
+        inputs = self.processor(audio.numpy(), sampling_rate=ASR_SAMPLE_RATE, return_tensors="pt")
         input_features = inputs.input_features.to(self.device)
         try:
             generated = self.model.generate(

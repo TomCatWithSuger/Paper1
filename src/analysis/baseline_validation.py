@@ -1,6 +1,5 @@
 """审计 B1、B2、B3 基线实验并生成可复现实验记录。"""
 
-
 # ====================
 # 1. Imports
 # ====================
@@ -9,32 +8,29 @@
 import json
 from pathlib import Path
 
+from src.analysis.baseline.dataset import _build_test_manifest as _build_test_manifest
+from src.analysis.baseline.dataset import _resolve_vctk_root as _resolve_vctk_root
+from src.analysis.baseline.dataset import _shared_split_config as _shared_split_config
+from src.analysis.baseline.reporting import _controlled_rows as _controlled_rows
+from src.analysis.baseline.reporting import (
+    _experiment_plan_rows as _experiment_plan_rows,
+)
+from src.analysis.baseline.reporting import _format_metric as _format_metric
+from src.analysis.baseline.reporting import _format_value as _format_value
+from src.analysis.baseline.reporting import _report_text as _report_text
+from src.analysis.baseline.reporting import _write_csv as _write_csv
 from src.analysis.baseline.runs import (
     CONTROLLED_CONFIG_PATHS as CONTROLLED_CONFIG_PATHS,
-    RUN_LABEL_TAGS as RUN_LABEL_TAGS,
-    RunSummary as RunSummary,
-    _checkpoint_name as _checkpoint_name,
-    _discover_runs as _discover_runs,
-    _metric as _metric,
-    _nested_value as _nested_value,
-    _read_config as _read_config,
-    _read_tags as _read_tags,
-    _scalar_metrics as _scalar_metrics,
 )
-from src.analysis.baseline.dataset import (
-    _build_test_manifest as _build_test_manifest,
-    _resolve_vctk_root as _resolve_vctk_root,
-    _shared_split_config as _shared_split_config,
-)
-from src.analysis.baseline.reporting import (
-    _controlled_rows as _controlled_rows,
-    _experiment_plan_rows as _experiment_plan_rows,
-    _format_metric as _format_metric,
-    _format_value as _format_value,
-    _report_text as _report_text,
-    _write_csv as _write_csv,
-)
-
+from src.analysis.baseline.runs import RUN_LABEL_TAGS as RUN_LABEL_TAGS
+from src.analysis.baseline.runs import RunSummary as RunSummary
+from src.analysis.baseline.runs import _checkpoint_name as _checkpoint_name
+from src.analysis.baseline.runs import _discover_runs as _discover_runs
+from src.analysis.baseline.runs import _metric as _metric
+from src.analysis.baseline.runs import _nested_value as _nested_value
+from src.analysis.baseline.runs import _read_config as _read_config
+from src.analysis.baseline.runs import _read_tags as _read_tags
+from src.analysis.baseline.runs import _scalar_metrics as _scalar_metrics
 
 # ====================
 # 4. Internal Functions

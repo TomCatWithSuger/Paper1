@@ -1,6 +1,5 @@
 """生成基线审计表格、实验计划与报告。"""
 
-
 # ====================
 # 1. Imports
 # ====================
@@ -18,7 +17,6 @@ from src.analysis.baseline.runs import (
     _metric,
     _nested_value,
 )
-
 
 # ====================
 # 4. Internal Functions

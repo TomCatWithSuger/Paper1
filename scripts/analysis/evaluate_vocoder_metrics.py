@@ -1,7 +1,6 @@
 """Vocoder 波形域评估入口脚本。
 
-将统一评估生成的 Mel 经 Vocos 声码器合成为波形，
-计算 WER/CER、说话人相似度、F0、能量与 RTF 等指标。
+将统一评估生成的 Mel 经 Vocos 声码器合成为波形， 计算 WER/CER、说话人相似度、F0、能量与 RTF 等指标。
 """
 
 import argparse
@@ -42,7 +41,9 @@ def _parse_args() -> argparse.Namespace:
         "--asr-model-dir", type=Path, default=PROJECT_ROOT / "pretrained" / "whisper-small"
     )
     parser.add_argument(
-        "--speaker-source", type=Path, default=PROJECT_ROOT / "pretrained" / "meanvc" / "ecapa_tdnn.py"
+        "--speaker-source",
+        type=Path,
+        default=PROJECT_ROOT / "pretrained" / "meanvc" / "ecapa_tdnn.py",
     )
     parser.add_argument(
         "--speaker-checkpoint",

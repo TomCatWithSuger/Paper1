@@ -1,6 +1,5 @@
 """处理波形读写、项目 Mel 提取与声码器频带适配。"""
 
-
 # ====================
 # 1. Imports
 # ====================
@@ -25,7 +24,6 @@ from src.analysis.vocoder.definitions import (
     WIN_LENGTH,
 )
 
-
 # ====================
 # 4. Internal Functions
 # 内部业务实现
@@ -49,13 +47,16 @@ def _save_waveform(path: Path, waveform: torch.Tensor) -> None:
 
 def _ours_mel_centers() -> torch.Tensor:
     """计算项目 HTK 式三角滤波器组的中心频率。"""
+
     def hz_to_mel(frequency: torch.Tensor) -> torch.Tensor:
         return 2595.0 * torch.log10(1.0 + frequency / 700.0)
 
     def mel_to_hz(mel: torch.Tensor) -> torch.Tensor:
         return 700.0 * (torch.pow(10.0, mel / 2595.0) - 1.0)
 
-    mel_points = torch.linspace(hz_to_mel(torch.tensor(F_MIN)), hz_to_mel(torch.tensor(F_MAX)), N_MELS + 2)
+    mel_points = torch.linspace(
+        hz_to_mel(torch.tensor(F_MIN)), hz_to_mel(torch.tensor(F_MAX)), N_MELS + 2
+    )
     return mel_to_hz(mel_points)[1:-1]
 
 
@@ -107,13 +108,16 @@ def _adapt_log_mel(log_mel: torch.Tensor, matrix: torch.Tensor) -> torch.Tensor:
 
 def _ours_mel_filterbank() -> torch.Tensor:
     """构建项目自定义 HTK 式三角滤波器组（与 VCTKCollator 完全一致）。"""
+
     def hz_to_mel(frequency: torch.Tensor) -> torch.Tensor:
         return 2595.0 * torch.log10(1.0 + frequency / 700.0)
 
     def mel_to_hz(mel: torch.Tensor) -> torch.Tensor:
         return 700.0 * (torch.pow(10.0, mel / 2595.0) - 1.0)
 
-    mel_points = torch.linspace(hz_to_mel(torch.tensor(F_MIN)), hz_to_mel(torch.tensor(F_MAX)), N_MELS + 2)
+    mel_points = torch.linspace(
+        hz_to_mel(torch.tensor(F_MIN)), hz_to_mel(torch.tensor(F_MAX)), N_MELS + 2
+    )
     frequency_points = mel_to_hz(mel_points)
     fft_frequencies = torch.linspace(0.0, SAMPLE_RATE / 2, N_FFT // 2 + 1)
     lower = frequency_points[:-2].unsqueeze(1)

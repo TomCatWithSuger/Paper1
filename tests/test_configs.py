@@ -1,6 +1,6 @@
-import hydra
 from pathlib import Path
 
+import hydra
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 
@@ -56,13 +56,22 @@ def test_b1_b2_controlled_defaults() -> None:
         assert baseline[field] == mean_flow[field]
         assert baseline[field] == mean_voice_flow[field]
     for field in (
-        "optimizer", "scheduler", "warmup_steps", "compile", "validation_sampling_count",
-        "test_sampling_count", "evaluation_seed",
+        "optimizer",
+        "scheduler",
+        "warmup_steps",
+        "compile",
+        "validation_sampling_count",
+        "test_sampling_count",
+        "evaluation_seed",
     ):
         assert baseline.model[field] == mean_flow.model[field]
     for field in (
-        "optimizer", "scheduler", "warmup_steps", "validation_sampling_count",
-        "test_sampling_count", "evaluation_seed",
+        "optimizer",
+        "scheduler",
+        "warmup_steps",
+        "validation_sampling_count",
+        "test_sampling_count",
+        "evaluation_seed",
     ):
         assert baseline.model[field] == mean_voice_flow.model[field]
     for config in (baseline, mean_flow, mean_voice_flow):

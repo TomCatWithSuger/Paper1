@@ -1,8 +1,8 @@
 """MeanVoiceFlow 的伪源先验、JVP 与零输入重构。"""
 
+import warnings
 from collections.abc import Callable
 from typing import cast
-import warnings
 
 import torch
 import torch.nn.functional as F
@@ -103,16 +103,24 @@ class MeanVoiceFlow(VoiceMethod):
         permutation = torch.empty_like(ordered)
         permutation[ordered] = ordered.roll(shifts=-largest_group)
         valid = torch.tensor(
-            [speaker_ids[index] != speaker_ids[source]
-             for index, source in enumerate(permutation.tolist())],
+            [
+                speaker_ids[index] != speaker_ids[source]
+                for index, source in enumerate(permutation.tolist())
+            ],
             device=speaker_features.device,
             dtype=torch.bool,
         )
         return speaker_features[permutation], valid
 
     def _build_training_prior(
-        self, noise, content_features, content_lengths, speaker_features, target_mask,
-        generator=None, speaker_ids=None,
+        self,
+        noise,
+        content_features,
+        content_lengths,
+        speaker_features,
+        target_mask,
+        generator=None,
+        speaker_ids=None,
     ):
         batch_size = noise.size(0)
         pure_noise_times = torch.ones(batch_size, device=noise.device, dtype=noise.dtype)
@@ -133,12 +141,14 @@ class MeanVoiceFlow(VoiceMethod):
             )
             conditional_count = candidates.numel()
         if conditional_count == 0:
-            return noise.detach(), pure_noise_times, torch.zeros_like(
-                pure_noise_times, dtype=torch.bool
+            return (
+                noise.detach(),
+                pure_noise_times,
+                torch.zeros_like(pure_noise_times, dtype=torch.bool),
             )
-        selected = torch.randperm(
-            candidates.numel(), device=noise.device, generator=generator
-        )[:conditional_count]
+        selected = torch.randperm(candidates.numel(), device=noise.device, generator=generator)[
+            :conditional_count
+        ]
         conditional_mask = torch.zeros(batch_size, device=noise.device, dtype=torch.bool)
         conditional_mask[candidates[selected]] = True
         source_diffusion_times = self._sample_logit_normal(
@@ -250,11 +260,18 @@ class MeanVoiceFlow(VoiceMethod):
             content_features, content_lengths, speaker_features, target_mask
         )
         noise = torch.randn(
-            target_mels.shape, device=target_mels.device, dtype=target_mels.dtype,
+            target_mels.shape,
+            device=target_mels.device,
+            dtype=target_mels.dtype,
             generator=generator,
         )
         training_prior, source_diffusion_times, _ = self._build_training_prior(
-            noise, content_features, content_lengths, speaker_features, target_mask, generator,
+            noise,
+            content_features,
+            content_lengths,
+            speaker_features,
+            target_mask,
+            generator,
             speaker_ids,
         )
         start_times, end_times = self._sample_time_intervals(

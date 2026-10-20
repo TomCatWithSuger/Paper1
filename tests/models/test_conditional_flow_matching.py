@@ -195,10 +195,12 @@ def test_conditional_flow_matching_sampling_modes() -> None:
         state_before = torch.random.get_rng_state().clone()
         actual = module._evaluation_loss(batch, 0, 4, 0)
         repeated = module._evaluation_loss(batch, 0, 4, 0)
-        expected = torch.stack([
-            module.model_step(batch, generator=torch.Generator().manual_seed(12345 + index))[0]
-            for index in range(4)
-        ]).mean()
+        expected = torch.stack(
+            [
+                module.model_step(batch, generator=torch.Generator().manual_seed(12345 + index))[0]
+                for index in range(4)
+            ]
+        ).mean()
 
     assert all(torch.equal(left, right) for left, right in zip(first, second))
     assert not torch.equal(random_first[3], random_second[3])

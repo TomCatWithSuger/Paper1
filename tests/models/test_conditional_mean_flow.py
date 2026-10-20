@@ -382,12 +382,16 @@ def test_conditional_mean_flow_diagnostics_fixed_sampling_is_deterministic() -> 
     loss_b, diag_b = module._objectives(batch, 2, 4, 0)
 
     assert torch.equal(loss_a, loss_b)
-    assert set(diag_a) == set(diag_b) == {
-        "raw_meanflow_mse",
-        "velocity_mse",
-        "nonzero_interval_mse",
-        "jvp_correction_rms",
-    }
+    assert (
+        set(diag_a)
+        == set(diag_b)
+        == {
+            "raw_meanflow_mse",
+            "velocity_mse",
+            "nonzero_interval_mse",
+            "jvp_correction_rms",
+        }
+    )
     for key in diag_a:
         assert torch.equal(diag_a[key], diag_b[key])
 
@@ -565,7 +569,9 @@ def test_conditional_mean_flow_rejects_invalid_adaptive_params() -> None:
     with pytest.raises(ValueError):
         ConditionalMeanFlow(_network(), CachedConditionEncoder(8, 8, 8), adaptive_loss_epsilon=0.0)
     with pytest.raises(ValueError):
-        ConditionalMeanFlow(_network(), CachedConditionEncoder(8, 8, 8), equal_time_probability=1.5)
+        ConditionalMeanFlow(
+            _network(), CachedConditionEncoder(8, 8, 8), equal_time_probability=1.5
+        )
 
 
 def test_mean_flow_loss_empty_mask_contract() -> None:

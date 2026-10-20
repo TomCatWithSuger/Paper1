@@ -1,6 +1,5 @@
 """核验数据划分并构建固定测试清单。"""
 
-
 # ====================
 # 1. Imports
 # ====================
@@ -11,13 +10,12 @@ import json
 from pathlib import Path
 from typing import Any, Sequence
 
+from src.analysis.baseline.runs import RunSummary, _nested_value
 from src.data.components.vctk_splits import (
     UnseenSpeakerSentenceSplit,
     discover_vctk_samples,
 )
 from src.data.vctk_datamodule import VCTKDataset
-from src.analysis.baseline.runs import RunSummary, _nested_value
-
 
 # ====================
 # 4. Internal Functions

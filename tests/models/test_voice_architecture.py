@@ -174,10 +174,14 @@ def test_meanvoiceflow_fixed_evaluation_and_random_training():
         state = torch.random.get_rng_state().clone()
         actual = module._evaluation_loss(values, 0, 4, 0)
         repeated = module._evaluation_loss(values, 0, 4, 0)
-        expected = torch.stack([
-            module.model_step(values, generator=torch.Generator().manual_seed(12345 + index))[0]
-            for index in range(4)
-        ]).mean()
+        expected = torch.stack(
+            [
+                module.model_step(values, generator=torch.Generator().manual_seed(12345 + index))[
+                    0
+                ]
+                for index in range(4)
+            ]
+        ).mean()
     assert all(torch.equal(left, right) for left, right in zip(first, second))
     assert not torch.equal(random_first[3], random_second[3])
     assert torch.equal(actual, repeated)
@@ -193,8 +197,13 @@ def test_meanvoiceflow_exact_conditional_prior(batch_size):
     speaker_ids = [str(index % 2) for index in range(batch_size)]
     mask = torch.ones(batch_size, 13, dtype=torch.bool)
     prior, times, selected = method._build_training_prior(
-        noise, torch.randn(batch_size, 8, 11), torch.full((batch_size,), 11),
-        speaker, mask, torch.Generator().manual_seed(12), speaker_ids,
+        noise,
+        torch.randn(batch_size, 8, 11),
+        torch.full((batch_size,), 11),
+        speaker,
+        mask,
+        torch.Generator().manual_seed(12),
+        speaker_ids,
     )
     assert selected.sum() == batch_size // 2
     assert torch.equal(prior[~selected], noise[~selected])
@@ -203,7 +212,8 @@ def test_meanvoiceflow_exact_conditional_prior(batch_size):
     if batch_size > 1:
         assert not prior.requires_grad
         shuffled, valid = method._shuffle_speaker_features(
-            torch.arange(batch_size).float().unsqueeze(1), speaker_ids,
+            torch.arange(batch_size).float().unsqueeze(1),
+            speaker_ids,
             torch.Generator().manual_seed(12),
         )
         assert torch.sort(shuffled[:, 0]).values.tolist() == list(range(batch_size))
@@ -278,8 +288,11 @@ def test_meanvoiceflow_adaptive_loss_formula_and_gradient():
     torch.testing.assert_close(actual, expected)
     actual.backward()
     expected_gradient = (
-        2 * (prediction.detach() - target) * valid
-        / (energy.detach() + 1e-3).view(-1, 1, 1) / prediction.size(0)
+        2
+        * (prediction.detach() - target)
+        * valid
+        / (energy.detach() + 1e-3).view(-1, 1, 1)
+        / prediction.size(0)
     )
     torch.testing.assert_close(prediction.grad, expected_gradient)
     assert torch.count_nonzero(prediction.grad[1, :, 9:]) == 0
@@ -296,9 +309,13 @@ def test_meanvoiceflow_pseudo_source_formula(monkeypatch):
     values = batch()
     noise = torch.randn(2, 8, 13)
     prior, times, selected = method._build_training_prior(
-        noise, values["content_features"], values["content_feature_lengths"],
-        values["speaker_features"], values["mel_attention_mask"],
-        torch.Generator().manual_seed(45), values["speaker_ids"],
+        noise,
+        values["content_features"],
+        values["content_feature_lengths"],
+        values["speaker_features"],
+        values["mel_attention_mask"],
+        torch.Generator().manual_seed(45),
+        values["speaker_ids"],
     )
     expected = noise - 2 * (1 - times).view(-1, 1, 1)
     torch.testing.assert_close(prior, expected)
@@ -311,9 +328,12 @@ def test_meanvoiceflow_analytic_jvp_target_and_stop_gradient(monkeypatch):
     scale = nn.Parameter(torch.tensor(2.0))
 
     def analytic_velocity(states, starts, ends, source_times, condition, mask):
-        return (scale * states + 3 * ends.view(-1, 1, 1)
-                + 5 * (ends - starts).view(-1, 1, 1)
-                + 7 * source_times.view(-1, 1, 1))
+        return (
+            scale * states
+            + 3 * ends.view(-1, 1, 1)
+            + 5 * (ends - starts).view(-1, 1, 1)
+            + 7 * source_times.view(-1, 1, 1)
+        )
 
     def pure_noise_prior(noise, *args):
         return noise, torch.ones(noise.size(0)), torch.zeros(noise.size(0), dtype=torch.bool)
@@ -329,9 +349,12 @@ def test_meanvoiceflow_analytic_jvp_target_and_stop_gradient(monkeypatch):
     instantaneous = noise - values["mel_spectrograms"]
     expected = instantaneous - (ends - starts).view(-1, 1, 1) * (2 * instantaneous + 8)
     loss, prediction, target, _ = method.compute_loss(
-        values["mel_spectrograms"], values["mel_attention_mask"],
-        values["content_features"], values["content_feature_lengths"],
-        values["speaker_features"], generator=torch.Generator().manual_seed(46),
+        values["mel_spectrograms"],
+        values["mel_attention_mask"],
+        values["content_features"],
+        values["content_feature_lengths"],
+        values["speaker_features"],
+        generator=torch.Generator().manual_seed(46),
     )
     torch.testing.assert_close(target, expected)
     torch.testing.assert_close(target[1], instantaneous[1])

@@ -1,6 +1,5 @@
 """计算评估身份并核验断点续跑条件。"""
 
-
 # ====================
 # 1. Imports
 # ====================
@@ -8,7 +7,8 @@
 
 import hashlib
 import json
-import subprocess
+import shutil
+import subprocess  # nosec B404 - 仅执行固定参数的本地版本控制命令
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -17,7 +17,6 @@ from src.analysis.unified.checkpoints import (
     _best_checkpoint,
     _model_config,
 )
-
 
 # ====================
 # 4. Internal Functions
@@ -37,9 +36,7 @@ def _checkpoint_sha256(run_dir: Path) -> str:
     return _sha256_file(_best_checkpoint(run_dir))
 
 
-def _feature_cache_fingerprint(
-    manifest: Sequence[dict[str, str]], feature_cache_dir: Path
-) -> str:
+def _feature_cache_fingerprint(manifest: Sequence[dict[str, str]], feature_cache_dir: Path) -> str:
     digest = hashlib.sha256()
     utterances = sorted(
         {
@@ -58,16 +55,22 @@ def _feature_cache_fingerprint(
 
 
 def _source_version() -> str:
+    git_executable = shutil.which("git")
+    if git_executable is None:
+        return "unknown"
     try:
+        git_executable = str(Path(git_executable).resolve())
         commit = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            [git_executable, "rev-parse", "HEAD"],
+            shell=False,  # nosec B603 - 绝对路径、固定参数且禁用命令解释器
             capture_output=True,
             text=True,
             check=True,
             timeout=5,
         ).stdout.strip()
         dirty = subprocess.run(
-            ["git", "status", "--porcelain"],
+            [git_executable, "status", "--porcelain"],
+            shell=False,  # nosec B603 - 绝对路径、固定参数且禁用命令解释器
             capture_output=True,
             text=True,
             check=True,
