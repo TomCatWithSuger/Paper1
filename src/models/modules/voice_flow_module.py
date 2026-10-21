@@ -39,6 +39,12 @@ class VoiceFlowModule(LightningModule):
         self.train_loss = MeanMetric()
         self.val_loss = MeanMetric()
         self.test_loss = MeanMetric()
+        self.optimization_loss = MeanMetric()
+        self.raw_meanflow_mse = MeanMetric()
+        self.velocity_mse = MeanMetric()
+        self.nonzero_interval_mse = MeanMetric()
+        self.jvp_correction_rms = MeanMetric()
+        self.one_step_reconstruction_l1 = MeanMetric()
         for count in (validation_sampling_count, test_sampling_count):
             if count is not None and count <= 0:
                 raise ValueError("验证和测试采样次数必须为正数")
@@ -80,11 +86,23 @@ class VoiceFlowModule(LightningModule):
     def forward(self, *args, **kwargs):
         return self.method(*args, **kwargs)
 
-    def model_step(self, batch, generator=None):
+    def model_step(self, batch, generator=None, return_diagnostics=False):
         values = self._training_data(batch)
-        if generator is None:
-            return self.method.compute_loss(*values)
-        return self.method.compute_loss(*values, generator=generator)
+        kwargs = {}
+        if getattr(self.method, "requires_speaker_ids", False):
+            kwargs["speaker_ids"] = batch.get("target_speaker_ids", batch.get("speaker_ids"))
+        if return_diagnostics and self.method.supports_diagnostics:
+            return self.method.compute_loss(
+                *values, generator=generator, return_diagnostics=True, **kwargs
+            )
+        result = (
+            self.method.compute_loss(*values, **kwargs)
+            if generator is None
+            else self.method.compute_loss(*values, generator=generator, **kwargs)
+        )
+        if return_diagnostics:
+            return (*result, {})
+        return result
 
     def on_train_start(self):
         self.val_loss.reset()
@@ -93,6 +111,14 @@ class VoiceFlowModule(LightningModule):
         loss, _, _, _ = self.model_step(batch)
         self.train_loss(loss)
         self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
+        if self.method.supports_diagnostics:
+            self.optimization_loss(loss)
+            self.log(
+                "train/optimization_loss",
+                self.optimization_loss,
+                on_step=False,
+                on_epoch=True,
+            )
         return loss
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
@@ -104,26 +130,75 @@ class VoiceFlowModule(LightningModule):
             )
         return self.method.generate(content, lengths, speaker, mask, **kwargs)
 
-    def _evaluation_loss(self, batch, batch_idx, sampling_count, seed_offset):
+    def _objectives(self, batch, batch_idx, sampling_count, seed_offset):
+        """在固定采样下计算损失并收集诊断标量（NaN 组不并入均值）。"""
         target_mels = self._training_data(batch)[0]
+        if sampling_count is None:
+            loss, _, _, _, diagnostics = self.model_step(batch, return_diagnostics=True)
+            return loss, diagnostics
         losses = []
+        collected: dict[str, list] = {}
         for sample_idx in range(sampling_count):
             generator = torch.Generator(device=target_mels.device)
             generator.manual_seed(
                 self.evaluation_seed + seed_offset + batch_idx * sampling_count + sample_idx
             )
-            loss, _, _, _ = self.model_step(batch, generator=generator)
+            loss, _, _, _, diagnostics = self.model_step(
+                batch, generator=generator, return_diagnostics=True
+            )
             losses.append(loss)
-        return torch.stack(losses).mean()
+            for name, value in diagnostics.items():
+                collected.setdefault(name, []).append(value)
+        mean_diagnostics = {}
+        for name, values in collected.items():
+            finite = [value for value in values if torch.isfinite(value)]
+            if finite:
+                mean_diagnostics[name] = torch.stack(finite).mean()
+        return torch.stack(losses).mean(), mean_diagnostics
+
+    def _evaluation_loss(self, batch, batch_idx, sampling_count, seed_offset):
+        return self._objectives(batch, batch_idx, sampling_count, seed_offset)[0]
+
+    def _log_validation_diagnostics(self, diagnostics, batch, batch_idx):
+        """记录 B2 固定采样诊断与一步自重建 L1。"""
+        for name in (
+            "raw_meanflow_mse",
+            "velocity_mse",
+            "nonzero_interval_mse",
+            "jvp_correction_rms",
+        ):
+            value = diagnostics.get(name)
+            if value is not None and torch.isfinite(value):
+                getattr(self, name)(value)
+            self.log(f"val/{name}", getattr(self, name), on_step=False, on_epoch=True)
+        reconstruction = self._one_step_reconstruction_l1(batch, batch_idx)
+        if torch.isfinite(reconstruction):
+            self.one_step_reconstruction_l1(reconstruction)
+        self.log(
+            "val/one_step_reconstruction_l1",
+            self.one_step_reconstruction_l1,
+            on_step=False,
+            on_epoch=True,
+        )
+
+    def _one_step_reconstruction_l1(self, batch, batch_idx):
+        """固定验证样本的一步自重建 L1；固定种子以保证可复现。"""
+        target_mels, target_mask, content, lengths, speaker = self._training_data(batch)
+        devices = [] if target_mels.device.type == "cpu" else [target_mels.device]
+        with torch.random.fork_rng(devices=devices):
+            torch.manual_seed(self.evaluation_seed + batch_idx)
+            generated = self.method.generate(content, lengths, speaker, target_mask)
+        valid = target_mask.unsqueeze(1).to(dtype=target_mels.dtype)
+        return ((generated - target_mels).abs() * valid).sum() / (
+            valid.sum() * target_mels.size(1)
+        ).clamp_min(1.0)
 
     def validation_step(self, batch, batch_idx):
-        loss = (
-            self.model_step(batch)[0]
-            if self.validation_sampling_count is None
-            else self._evaluation_loss(batch, batch_idx, self.validation_sampling_count, 0)
-        )
+        loss, diagnostics = self._objectives(batch, batch_idx, self.validation_sampling_count, 0)
         self.val_loss(loss)
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
+        if self.method.supports_diagnostics:
+            self._log_validation_diagnostics(diagnostics, batch, batch_idx)
 
     def test_step(self, batch, batch_idx):
         loss = (

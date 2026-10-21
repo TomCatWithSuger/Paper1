@@ -176,3 +176,34 @@ def test_conditional_flow_matching_vctk_batch_fallback() -> None:
 
     assert torch.isfinite(loss)
     assert generated.shape == batch["mel_spectrograms"].shape
+
+
+def test_conditional_flow_matching_sampling_modes() -> None:
+    module = _module().eval()
+    batch = {
+        "mel_spectrograms": torch.randn(2, 8, 11),
+        "mel_attention_mask": torch.ones(2, 11, dtype=torch.bool),
+        "content_features": torch.randn(2, 8, 9),
+        "content_feature_lengths": torch.tensor([9, 8]),
+        "speaker_features": torch.randn(2, 8),
+    }
+    with torch.no_grad():
+        first = module.model_step(batch, generator=torch.Generator().manual_seed(12345))
+        second = module.model_step(batch, generator=torch.Generator().manual_seed(12345))
+        random_first = module.model_step(batch)
+        random_second = module.model_step(batch)
+        state_before = torch.random.get_rng_state().clone()
+        actual = module._evaluation_loss(batch, 0, 4, 0)
+        repeated = module._evaluation_loss(batch, 0, 4, 0)
+        expected = torch.stack(
+            [
+                module.model_step(batch, generator=torch.Generator().manual_seed(12345 + index))[0]
+                for index in range(4)
+            ]
+        ).mean()
+
+    assert all(torch.equal(left, right) for left, right in zip(first, second))
+    assert not torch.equal(random_first[3], random_second[3])
+    assert torch.equal(actual, repeated)
+    torch.testing.assert_close(actual, expected)
+    assert torch.equal(state_before, torch.random.get_rng_state())

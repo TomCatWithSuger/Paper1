@@ -10,6 +10,10 @@ scheduler: null
 
 warmup_steps: 10000
 
+validation_sampling_count: 4
+test_sampling_count: 8
+evaluation_seed: 12345
+
 method:
   _target_: src.models.methods.generative.flow.mean_flow.meanvoiceflow.MeanVoiceFlow
   equal_time_probability: 0.75

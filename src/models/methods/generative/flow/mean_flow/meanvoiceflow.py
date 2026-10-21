@@ -1,5 +1,6 @@
 """MeanVoiceFlow 的伪源先验、JVP 与零输入重构。"""
 
+import warnings
 from collections.abc import Callable
 from typing import cast
 
@@ -7,7 +8,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from src.models.methods.base import VoiceMethod
+from src.models.methods.base import VoiceMethod, reject_inference_mode_jvp
 from src.models.methods.generative.flow.mean_flow.conditional_mean_flow import (
     ConditionalMeanFlow,
 )
@@ -17,6 +18,7 @@ class MeanVoiceFlow(VoiceMethod):
     """结合伪源先验与零输入重构训练一步语音转换。"""
 
     requires_source_mels = True
+    requires_speaker_ids = True
     interpolate = staticmethod(ConditionalMeanFlow.interpolate)
 
     def __init__(
@@ -69,39 +71,93 @@ class MeanVoiceFlow(VoiceMethod):
         )
 
     @staticmethod
-    def _sample_logit_normal(batch_size, device, dtype):
-        return torch.sigmoid(torch.randn(batch_size, device=device, dtype=dtype))
+    def _sample_logit_normal(batch_size, device, dtype, generator=None):
+        return torch.sigmoid(
+            torch.randn(batch_size, device=device, dtype=dtype, generator=generator)
+        )
 
-    def _sample_time_intervals(self, batch_size, device, dtype):
-        first = self._sample_logit_normal(batch_size, device, dtype)
-        second = self._sample_logit_normal(batch_size, device, dtype)
+    def _sample_time_intervals(self, batch_size, device, dtype, generator=None):
+        first = self._sample_logit_normal(batch_size, device, dtype, generator)
+        second = self._sample_logit_normal(batch_size, device, dtype, generator)
         start_times = torch.minimum(first, second)
         end_times = torch.maximum(first, second)
         equal_time_mask = (
-            torch.rand(batch_size, device=device, dtype=dtype) < self.equal_time_probability
+            torch.rand(batch_size, device=device, dtype=dtype, generator=generator)
+            < self.equal_time_probability
         )
         return torch.where(equal_time_mask, end_times, start_times), end_times
 
     @staticmethod
-    def _shuffle_speaker_features(speaker_features):
+    def _shuffle_speaker_features(speaker_features, speaker_ids, generator=None):
         batch_size = speaker_features.size(0)
-        if batch_size < 2:
-            return speaker_features
-        shift = int(torch.randint(1, batch_size, (), device=speaker_features.device).item())
-        return speaker_features.roll(shifts=shift, dims=0)
+        if speaker_ids is None or len(speaker_ids) != batch_size:
+            raise ValueError("B3 伪源配对需要与批次等长的 speaker_ids")
+        random_order = torch.randperm(
+            batch_size, device=speaker_features.device, generator=generator
+        ).tolist()
+        ordered = torch.tensor(
+            sorted(random_order, key=lambda index: speaker_ids[index]),
+            device=speaker_features.device,
+        )
+        largest_group = max(speaker_ids.count(identity) for identity in set(speaker_ids))
+        permutation = torch.empty_like(ordered)
+        permutation[ordered] = ordered.roll(shifts=-largest_group)
+        valid = torch.tensor(
+            [
+                speaker_ids[index] != speaker_ids[source]
+                for index, source in enumerate(permutation.tolist())
+            ],
+            device=speaker_features.device,
+            dtype=torch.bool,
+        )
+        return speaker_features[permutation], valid
 
     def _build_training_prior(
-        self, noise, content_features, content_lengths, speaker_features, target_mask
+        self,
+        noise,
+        content_features,
+        content_lengths,
+        speaker_features,
+        target_mask,
+        generator=None,
+        speaker_ids=None,
     ):
         batch_size = noise.size(0)
         pure_noise_times = torch.ones(batch_size, device=noise.device, dtype=noise.dtype)
         if batch_size < 2 or self.conditional_input_probability == 0.0:
             return noise, pure_noise_times, torch.zeros_like(pure_noise_times, dtype=torch.bool)
-        source_diffusion_times = self._sample_logit_normal(batch_size, noise.device, noise.dtype)
+        conditional_count = int(batch_size * self.conditional_input_probability)
+        if conditional_count == 0:
+            return noise, pure_noise_times, torch.zeros_like(pure_noise_times, dtype=torch.bool)
+        shuffled_speakers, valid_pairs = self._shuffle_speaker_features(
+            speaker_features, speaker_ids, generator
+        )
+        candidates = torch.nonzero(valid_pairs, as_tuple=False).flatten()
+        if candidates.numel() < conditional_count:
+            warnings.warn(
+                "B3 批内不同说话人配对不足，未配对的伪源位置改用纯噪声",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            conditional_count = candidates.numel()
+        if conditional_count == 0:
+            return (
+                noise.detach(),
+                pure_noise_times,
+                torch.zeros_like(pure_noise_times, dtype=torch.bool),
+            )
+        selected = torch.randperm(candidates.numel(), device=noise.device, generator=generator)[
+            :conditional_count
+        ]
+        conditional_mask = torch.zeros(batch_size, device=noise.device, dtype=torch.bool)
+        conditional_mask[candidates[selected]] = True
+        source_diffusion_times = self._sample_logit_normal(
+            batch_size, noise.device, noise.dtype, generator
+        )
         source_condition = self.encode_condition(
             content_features=content_features,
             content_lengths=content_lengths,
-            speaker_features=self._shuffle_speaker_features(speaker_features),
+            speaker_features=shuffled_speakers,
             target_mask=target_mask,
         )
         with torch.no_grad():
@@ -117,10 +173,6 @@ class MeanVoiceFlow(VoiceMethod):
             pseudo_source = noise - (
                 (1.0 - source_diffusion_times).view(interval_shape) * pseudo_source_velocity
             )
-        conditional_mask = (
-            torch.rand(batch_size, device=noise.device, dtype=noise.dtype)
-            < self.conditional_input_probability
-        )
         mask_shape = (batch_size,) + (1,) * (noise.ndim - 1)
         training_prior = torch.where(conditional_mask.view(mask_shape), pseudo_source, noise)
         effective_times = torch.where(conditional_mask, source_diffusion_times, pure_noise_times)
@@ -138,6 +190,9 @@ class MeanVoiceFlow(VoiceMethod):
         negative_infinity = torch.full_like(target, -torch.inf)
         target_min = torch.where(valid, target, positive_infinity).amin(dim=(1, 2), keepdim=True)
         target_max = torch.where(valid, target, negative_infinity).amax(dim=(1, 2), keepdim=True)
+        has_frames = mask.any(dim=1).view(-1, 1, 1)
+        target_min = torch.where(has_frames, target_min, torch.zeros_like(target_min))
+        target_max = torch.where(has_frames, target_max, torch.ones_like(target_max))
         target_range = (target_max - target_min).clamp_min(1e-6)
         normalized_prediction = (prediction - target_min) / target_range
         normalized_target = (target - target_min) / target_range
@@ -178,13 +233,15 @@ class MeanVoiceFlow(VoiceMethod):
         normalization = (
             (prediction_mean.square() + target_mean.square() + 0.01**2)
             * (prediction_variance + target_variance + 0.03**2)
-        ).clamp_min(1e-6)
+        ).clamp_min(torch.finfo(target.dtype).tiny)
         ssim_map = luminance * contrast / normalization
-        valid_windows = (local_weight > 0).to(prediction.dtype)
+        valid_windows = valid_image
         per_sample_ssim = (ssim_map * valid_windows).sum(dim=(1, 2, 3)) / valid_windows.sum(
             dim=(1, 2, 3)
         ).clamp_min(1.0)
-        return (1.0 - per_sample_ssim).clamp_min(self.zero_reconstruction_margin).mean()
+        per_sample_loss = (1.0 - per_sample_ssim).clamp_min(self.zero_reconstruction_margin)
+        nonempty = has_frames.flatten().to(prediction.dtype)
+        return (per_sample_loss * nonempty).sum() / nonempty.sum().clamp_min(1.0)
 
     def compute_loss(
         self,
@@ -193,17 +250,32 @@ class MeanVoiceFlow(VoiceMethod):
         content_features: torch.Tensor,
         content_lengths: torch.Tensor,
         speaker_features: torch.Tensor,
+        generator: torch.Generator | None = None,
+        *,
+        speaker_ids: list[str] | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """返回自适应 MeanFlow 损失、预测、目标和路径状态。"""
+        reject_inference_mode_jvp()
         target_condition = self.encode_condition(
             content_features, content_lengths, speaker_features, target_mask
         )
-        noise = torch.randn_like(target_mels)
+        noise = torch.randn(
+            target_mels.shape,
+            device=target_mels.device,
+            dtype=target_mels.dtype,
+            generator=generator,
+        )
         training_prior, source_diffusion_times, _ = self._build_training_prior(
-            noise, content_features, content_lengths, speaker_features, target_mask
+            noise,
+            content_features,
+            content_lengths,
+            speaker_features,
+            target_mask,
+            generator,
+            speaker_ids,
         )
         start_times, end_times = self._sample_time_intervals(
-            target_mels.size(0), target_mels.device, target_mels.dtype
+            target_mels.size(0), target_mels.device, target_mels.dtype, generator
         )
         path_samples = self.interpolate(target_mels, training_prior, end_times)
         instantaneous_velocity = training_prior - target_mels

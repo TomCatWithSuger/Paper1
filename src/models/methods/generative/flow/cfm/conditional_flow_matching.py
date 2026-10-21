@@ -32,13 +32,24 @@ class ConditionalFlowMatching(VoiceMethod):
         content_features: torch.Tensor,
         content_lengths: torch.Tensor,
         speaker_features: torch.Tensor,
+        generator: torch.Generator | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """返回掩码速度损失、预测、目标和路径状态。"""
         condition = self.encode_condition(
             content_features, content_lengths, speaker_features, target_mask
         )
-        noise = torch.randn_like(target_mels)
-        times = torch.rand(target_mels.size(0), device=target_mels.device, dtype=target_mels.dtype)
+        noise = torch.randn(
+            target_mels.shape,
+            device=target_mels.device,
+            dtype=target_mels.dtype,
+            generator=generator,
+        )
+        times = torch.rand(
+            target_mels.size(0),
+            device=target_mels.device,
+            dtype=target_mels.dtype,
+            generator=generator,
+        )
         path_samples = self.interpolate(target_mels, noise, times)
         target_velocity = target_mels - noise
         predicted_velocity = self(path_samples, times, condition, target_mask)

@@ -143,6 +143,7 @@ uv run python src/train.py trainer=cpu
 
 ```bash
 conda activate Lightning-Template
+pytest
 pre-commit run --all-files
 make lint-changed
 make test-cov

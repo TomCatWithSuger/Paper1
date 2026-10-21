@@ -19,3 +19,4 @@ require_feature_cache: true
 batch_size: 16
 num_workers: 0
 pin_memory: False
+interleave_evaluation_speakers: true

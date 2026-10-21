@@ -6,6 +6,7 @@ defaults:
   - override /data/vctk_split: unseen_speaker_sentence
   - override /model: conditional_flow_matching
   - override /callbacks: default
+  - override /logger: csv
   - override /trainer: default
 
 tags: ["vctk", "conditional-flow-matching", "voice-conversion-baseline"]
@@ -27,6 +28,4 @@ callbacks:
   model_checkpoint:
     monitor: val/loss
     mode: min
-  early_stopping:
-    monitor: val/loss
-    mode: min
+  early_stopping: null

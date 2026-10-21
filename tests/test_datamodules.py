@@ -12,6 +12,30 @@ from src.data.mnist_datamodule import MNISTDataModule
 from src.data.vctk_datamodule import VCTKDataModule
 
 
+def test_vctk_evaluation_interleaving_preserves_samples(vctk_data_dir: Path) -> None:
+    options = {
+        "data_dir": str(vctk_data_dir),
+        "split_strategy": UnseenSpeakerSentenceSplit(
+            evaluation_speaker_ids=["p229", "p230"],
+            evaluation_sentence_ids=["001", "002"],
+        ),
+    }
+    original = VCTKDataModule(**options)
+    interleaved = VCTKDataModule(**options, interleave_evaluation_speakers=True)
+    original.setup("test")
+    interleaved.setup("test")
+    before = [sample.utterance_id for sample in original.data_test.samples]
+    after = [sample.utterance_id for sample in interleaved.data_test.samples]
+    assert sorted(before) == sorted(after)
+    assert len(after) == len(set(after))
+    assert (
+        interleaved.data_test.samples[0].speaker_id != interleaved.data_test.samples[1].speaker_id
+    )
+    repeated = VCTKDataModule(**options, interleave_evaluation_speakers=True)
+    repeated.setup("test")
+    assert after == [sample.utterance_id for sample in repeated.data_test.samples]
+
+
 @pytest.mark.parametrize("batch_size", [32, 128])
 def test_mnist_datamodule(batch_size: int) -> None:
     """验证 MNIST 的下载、数据划分、数据加载器、批大小和张量类型。

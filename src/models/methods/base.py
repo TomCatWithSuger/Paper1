@@ -4,10 +4,20 @@ import torch
 from torch import nn
 
 
+def reject_inference_mode_jvp() -> None:
+    """拒绝在推理模式下计算需要前向自动微分的 JVP 目标。"""
+    if torch.is_inference_mode_enabled():
+        raise RuntimeError(
+            "JVP 目标不能在 torch.inference_mode() 下计算（前向自动微分会静默退化）；"
+            "请使用 trainer.inference_mode=false 的评估入口"
+        )
+
+
 class VoiceMethod(nn.Module):
     """统一条件语音方法的条件编码和生成入口。"""
 
     requires_source_mels = False
+    supports_diagnostics = False
 
     def __init__(self, network: nn.Module, condition_encoder: nn.Module) -> None:
         super().__init__()
