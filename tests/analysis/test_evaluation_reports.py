@@ -23,6 +23,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 
 from src.analysis import baseline_validation as baseline
 from src.analysis import unified_vc_evaluation as unified
+from src.analysis import vocoder_evaluation as vocoder
 from src.analysis.unified import identity
 from src.analysis.vocoder import audio as vocoder_audio
 from src.analysis.vocoder import models as vocoder_models
@@ -140,12 +141,18 @@ def test_source_version_handles_command_errors(monkeypatch, tmp_path, error):
 
 
 @pytest.mark.parametrize("existing_file", [False, True])
-def test_asr_requires_existing_local_directory(tmp_path, existing_file):
+def test_asr_missing_local_directory_skips_metrics(tmp_path, existing_file, caplog):
     model_path = tmp_path / "whisper"
     if existing_file:
         model_path.touch()
-    with pytest.raises(FileNotFoundError, match="Whisper 本地模型目录不存在"):
-        vocoder_models._AsrScorer(model_path, torch.device("cpu"))
+    scorer = vocoder_models._AsrScorer(model_path, torch.device("cpu"))
+    assert not scorer.available
+    assert "跳过 WER/CER" in caplog.text
+    assert str(model_path) in caplog.text
+    scores = scorer.score(torch.zeros(100), "hello")
+    assert math.isnan(scores["wer"]) and math.isnan(scores["cer"])
+    assert scores["asr_hyp"] == ""
+    assert scorer.transcribe(torch.zeros(100)) == ""
 
 
 def test_asr_only_loads_local_models(monkeypatch, tmp_path):
@@ -174,6 +181,130 @@ def test_asr_only_loads_local_models(monkeypatch, tmp_path):
     assert scorer.processor is processor
     assert scorer.model is model
     assert not model.training
+    assert scorer.available
+
+
+@pytest.mark.parametrize("failure_stage", ["processor", "model", "dependency"])
+def test_asr_unavailable_local_resources_skip_metrics(
+    monkeypatch, tmp_path, caplog, failure_stage
+):
+    def unavailable(*args, **kwargs):
+        raise OSError("模型文件不完整")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "transformers",
+        (
+            None
+            if failure_stage == "dependency"
+            else SimpleNamespace(
+                WhisperProcessor=SimpleNamespace(
+                    from_pretrained=(
+                        unavailable
+                        if failure_stage == "processor"
+                        else lambda *args, **kwargs: object()
+                    )
+                ),
+                WhisperForConditionalGeneration=SimpleNamespace(from_pretrained=unavailable),
+            )
+        ),
+    )
+    scorer = vocoder_models._AsrScorer(tmp_path, torch.device("cpu"))
+    assert not scorer.available
+    assert "跳过 WER/CER" in caplog.text
+    assert math.isnan(scorer.score(torch.zeros(100), "hello")["wer"])
+
+
+def test_vocoder_without_whisper_continues_and_can_resume_asr(monkeypatch, tmp_path, caplog):
+    waveform = torch.sin(torch.arange(2205) * (2 * math.pi * 440 / 22050)) * 0.25
+
+    class LocalVocos(torch.nn.Module):
+        def decode(self, mel):
+            return waveform.unsqueeze(0)
+
+    monkeypatch.setattr(vocoder, "_load_vocos", lambda *args: LocalVocos())
+    monkeypatch.setattr(
+        vocoder,
+        "_SpeakerScorer",
+        lambda *args: SimpleNamespace(
+            embedding=lambda *args, **kwargs: torch.ones(2),
+            similarity=lambda *args: 0.75,
+        ),
+    )
+    monkeypatch.setattr(vocoder, "_load_audio", lambda *args: waveform)
+    monkeypatch.setattr(
+        vocoder,
+        "discover_vctk_samples",
+        lambda *args: [SimpleNamespace(utterance_id="reference", audio_path=tmp_path / "ref.wav")],
+    )
+    monkeypatch.setattr(
+        vocoder,
+        "_contour_metrics",
+        lambda *args: {
+            "f0_corr": 0.8,
+            "f0_log_mae": 0.1,
+            "energy_corr": 0.9,
+            "energy_log_mae": 0.2,
+        },
+    )
+    mel_path = tmp_path / "mel.pt"
+    torch.save({"mel": torch.zeros(80, 9)}, mel_path)
+    unified_dir = tmp_path / "unified"
+    vocoder._append_ledger(
+        unified_dir / "evaluation_records.jsonl",
+        {
+            "experiment_id": "b1",
+            "model": "B1",
+            "nfe": 1,
+            "sample_index": 0,
+            "source_id": "source",
+            "reference_id": "reference",
+            "audio_seconds": 0.1,
+            "latency_ms": 2,
+            "generated_path": str(mel_path),
+        },
+    )
+    manifest = tmp_path / "manifest.csv"
+    _write_csv(manifest, [{"source_id": "source", "reference_id": "reference", "text": "hello"}])
+    options = {
+        "unified_dir": unified_dir,
+        "manifest_path": manifest,
+        "vctk_root": tmp_path,
+        "vocos_config": tmp_path / "vocos.yaml",
+        "vocos_weights": tmp_path / "vocos.bin",
+        "asr_model_dir": tmp_path / "missing-whisper",
+        "speaker_source": tmp_path / "speaker.py",
+        "speaker_checkpoint": tmp_path / "speaker.pt",
+        "wavlm_checkpoint": tmp_path / "wavlm.pt",
+        "output_dir": tmp_path / "output",
+        "device": "cpu",
+    }
+    summary = vocoder.evaluate_vocoder_metrics(**options)
+    assert "跳过 WER/CER" in caplog.text
+    assert math.isnan(summary["aggregates"][0]["wer_mean"])
+    assert summary["aggregates"][0]["spk_sim_mean"] == 0.75
+    assert "跳过 WER/CER" in summary["report"].read_text()
+    assert Path(_read_csv(summary["per_sample"])[0]["wav_path"]).is_file()
+    assert math.isnan(float(_read_csv(summary["control"])[0]["wer_recon"]))
+    vocoder.evaluate_vocoder_metrics(**options)
+    ledger = options["output_dir"] / "evaluation_records.jsonl"
+    assert len(vocoder._load_ledger(ledger)) == 1
+
+    monkeypatch.setattr(
+        vocoder,
+        "_AsrScorer",
+        lambda *args: SimpleNamespace(
+            available=True,
+            score=lambda *args: {"wer": 0.25, "cer": 0.125, "asr_hyp": "hello"},
+        ),
+    )
+    summary = vocoder.evaluate_vocoder_metrics(**options)
+    assert summary["aggregates"][0]["sample_count"] == 1
+    assert summary["aggregates"][0]["wer_mean"] == 0.25
+    assert len(_read_csv(summary["per_sample"])) == 1
+    assert len(vocoder._load_ledger(ledger)) == 2
+    vocoder.evaluate_vocoder_metrics(**options)
+    assert len(vocoder._load_ledger(ledger)) == 2
 
 
 def test_vocoder_audio_roundtrip_and_mel_adapter(tmp_path):

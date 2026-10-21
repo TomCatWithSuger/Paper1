@@ -5,6 +5,8 @@
 # ====================
 
 
+import logging
+import math
 from pathlib import Path
 from typing import Any, Callable, cast
 
@@ -51,34 +53,51 @@ def _load_vocos(config_path: Path, weights_path: Path) -> Any:
 
 
 class _AsrScorer:
-    """使用 Whisper 提取转写文本并计算 WER/CER。"""
+    """优先使用本地 Whisper；不可用时提示并跳过 WER/CER。"""
 
     def __init__(self, model_dir: Path, device: torch.device) -> None:
+        self.available = False
+        self.device = device
+        self._normalizer: Callable[[str], str] | None = None
         model_dir = model_dir.expanduser().resolve()
         if not model_dir.is_dir():
-            raise FileNotFoundError(f"Whisper 本地模型目录不存在: {model_dir}")
-
-        from transformers import WhisperForConditionalGeneration, WhisperProcessor
-
-        self.processor = (
-            WhisperProcessor.from_pretrained(  # nosec B615 - 已校验本地目录并禁止联网下载
-                str(model_dir), local_files_only=True
+            logging.getLogger(__name__).warning(
+                "Whisper 本地模型目录不存在: %s；跳过 WER/CER，不会下载模型。", model_dir
             )
-        )
-        self.model: WhisperForConditionalGeneration = (
-            WhisperForConditionalGeneration.from_pretrained(  # nosec B615 - 已校验本地目录并禁止联网下载
-                str(model_dir), local_files_only=True
+            return
+
+        try:
+            from transformers import WhisperForConditionalGeneration, WhisperProcessor
+
+            self.processor = (
+                WhisperProcessor.from_pretrained(  # nosec B615 - 已校验本地目录并禁止联网下载
+                    str(model_dir), local_files_only=True
+                )
             )
-        )
+            self.model: WhisperForConditionalGeneration = (
+                WhisperForConditionalGeneration.from_pretrained(  # nosec B615 - 已校验本地目录并禁止联网下载
+                    str(model_dir), local_files_only=True
+                )
+            )
+        except (ImportError, OSError, ValueError) as error:
+            logging.getLogger(__name__).warning(
+                "Whisper 本地模型无法加载: %s（%s）；跳过 WER/CER，不会下载模型。",
+                model_dir,
+                error,
+            )
+            return
+
         cast(torch.nn.Module, self.model).to(device)
         self.model.eval()
-        self.device = device
         normalizer = getattr(self.processor.tokenizer, "normalizer", None)
-        self._normalizer: Callable[[str], str] | None = normalizer
+        self._normalizer = normalizer
+        self.available = True
 
     @torch.inference_mode()
     def transcribe(self, waveform: torch.Tensor) -> str:
         """转写单条波形（内部重采样到 16kHz）。"""
+        if not self.available:
+            return ""
         audio = torchaudio.functional.resample(waveform.cpu(), SAMPLE_RATE, ASR_SAMPLE_RATE)
         inputs = self.processor(audio.numpy(), sampling_rate=ASR_SAMPLE_RATE, return_tensors="pt")
         input_features = inputs.input_features.to(self.device)
@@ -96,7 +115,9 @@ class _AsrScorer:
         return self.processor.batch_decode(generated, skip_special_tokens=True)[0].strip()
 
     def score(self, waveform: torch.Tensor, text: str) -> dict[str, Any]:
-        """转写并计算 WER/CER。"""
+        """转写并计算 WER/CER；缺少本地模型时返回不可用指标。"""
+        if not self.available:
+            return {"asr_hyp": "", "wer": math.nan, "cer": math.nan}
         hypothesis = self.transcribe(waveform)
         reference = _normalize_text(text, self._normalizer)
         normalized_hyp = _normalize_text(hypothesis, self._normalizer)

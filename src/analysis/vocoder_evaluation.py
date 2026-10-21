@@ -10,6 +10,7 @@
 # ====================
 
 
+import math
 import time
 from pathlib import Path
 from typing import Any
@@ -233,7 +234,7 @@ def evaluate_vocoder_metrics(
         for _ in range(3):
             vocos_model.decode(torch.zeros(1, N_MELS, 64, device=resolved_device))
     mel_matrix = _build_mel_adapter()
-    print(f"加载 Whisper ASR: {asr_model_dir}")
+    print(f"检查本地 Whisper ASR: {asr_model_dir}")
     asr = _AsrScorer(Path(asr_model_dir), resolved_device)
     print(f"加载 MeanVC 说话人编码器: {speaker_checkpoint}")
     speaker = _SpeakerScorer(
@@ -256,16 +257,25 @@ def evaluate_vocoder_metrics(
         return reference_audio_cache[reference_id]
 
     completed = _load_ledger(ledger_path)
-    completed_keys = {
-        (str(record["experiment_id"]), str(record["source_id"]), str(record["reference_id"]))
+    results_by_key = {
+        (
+            str(record["experiment_id"]),
+            str(record["source_id"]),
+            str(record["reference_id"]),
+        ): record
         for record in completed
     }
-    results: list[dict[str, Any]] = list(completed)
 
     total = len(unified_records)
     for index, record in enumerate(unified_records, start=1):
         key = (str(record["experiment_id"]), str(record["source_id"]), str(record["reference_id"]))
-        if key in completed_keys:
+        previous = results_by_key.get(key)
+        if previous is not None and (
+            not asr.available
+            or all(
+                math.isfinite(float(previous.get(metric, math.nan))) for metric in ("wer", "cer")
+            )
+        ):
             continue
         reference_id = str(record["reference_id"])
         row = manifest[str(record["source_id"])]
@@ -290,7 +300,7 @@ def evaluate_vocoder_metrics(
             device=resolved_device,
         )
         _append_ledger(ledger_path, result)
-        results.append(result)
+        results_by_key[key] = result
         if index % 20 == 0 or index == total:
             print(f"生成样本进度: {index}/{total}")
 
@@ -320,12 +330,14 @@ def evaluate_vocoder_metrics(
             if index % 20 == 0 or index == len(control_sources):
                 print(f"重建对照进度: {index}/{len(control_sources)}")
 
+    results = list(results_by_key.values())
     aggregates = _aggregate(results)
     _write_csv(per_sample_path, results, PER_SAMPLE_FIELDS)
     _write_csv(control_path, control_rows, CONTROL_FIELDS)
     _write_csv(aggregate_path, aggregates, AGGREGATE_FIELDS)
     report_path.write_text(
-        _report(aggregates, control_rows, str(resolved_device)), encoding="utf-8"
+        _report(aggregates, control_rows, str(resolved_device), asr_available=asr.available),
+        encoding="utf-8",
     )
 
     return {
@@ -334,6 +346,7 @@ def evaluate_vocoder_metrics(
         "aggregate": aggregate_path,
         "report": report_path,
         "aggregates": aggregates,
+        "asr_available": asr.available,
     }
 
 

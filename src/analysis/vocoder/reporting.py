@@ -109,8 +109,15 @@ def _report(
     aggregates: Sequence[dict[str, Any]],
     control_rows: Sequence[dict[str, Any]],
     device: str,
+    *,
+    asr_available: bool = True,
 ) -> str:
     """生成波形域评估报告。"""
+    asr_description = (
+        "- WER/CER：openai/whisper-small（英文转写，文本归一化后按词/字符编辑距离计算）。"
+        if asr_available
+        else "- 本地 Whisper 不可用：本次跳过 WER/CER；NaN 表示未计算，历史有效结果保留，其他指标照常计算。"
+    )
     lines = [
         "# Vocoder 波形域评估报告",
         "",
@@ -118,7 +125,7 @@ def _report(
         "",
         "- 声码器：BSC-LT/vocos-mel-22khz（冻结预训练 Vocos，80 维 Mel→22.05kHz，对所有系统统一使用）。",
         "- Mel 适配：log 功率 Mel ÷2 转对数幅度，并经 HTK→slaney 频带线性插值后送入 Vocos。",
-        "- WER/CER：openai/whisper-small（英文转写，文本归一化后按词/字符编辑距离计算）。",
+        asr_description,
         "- 说话人相似度：MeanVC 冻结 WavLM Large + ECAPA-TDNN 余弦相似度（目标为参考音频）。",
         f"- F0：torchaudio detect_pitch_frequency（{F0_FREQ_LOW}-{F0_FREQ_HIGH}Hz，帧长 {F0_FRAME_TIME}s，双侧有声帧 log-F0 相关与 MAE）。",
         f"- 能量：{ENERGY_WIN}/{ENERGY_HOP} 分帧 log-RMS 的相关与 MAE。",
