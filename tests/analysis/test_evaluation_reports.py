@@ -283,7 +283,7 @@ def test_vocoder_without_whisper_continues_and_can_resume_asr(monkeypatch, tmp_p
     assert "跳过 WER/CER" in caplog.text
     assert math.isnan(summary["aggregates"][0]["wer_mean"])
     assert summary["aggregates"][0]["spk_sim_mean"] == 0.75
-    assert "跳过 WER/CER" in summary["report"].read_text()
+    assert "跳过 WER/CER" in summary["report"].read_text(encoding="utf-8")
     assert Path(_read_csv(summary["per_sample"])[0]["wav_path"]).is_file()
     assert math.isnan(float(_read_csv(summary["control"])[0]["wer_recon"]))
     vocoder.evaluate_vocoder_metrics(**options)
