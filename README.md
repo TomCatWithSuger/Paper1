@@ -15,6 +15,9 @@
 
 Tom 的语音lab
 
+研究进展见[阶段总结与下一步决策](docs/research/%E7%A0%94%E7%A9%B6%E9%98%B6%E6%AE%B5%E6%80%BB%E7%BB%93%E4%B8%8E%E4%B8%8B%E4%B8%80%E6%AD%A5%E5%86%B3%E7%AD%96_20261026.md)，全部说明见[文档导航](docs/README.md)。
+分析实现按 [P1 / P2 / 端点 pilot](src/analysis/README.md) 分包，命令行入口见 [scripts/analysis](scripts/analysis/README.md)，已有实验产物见[结果导航](analysis_results/README.md)。
+
 ## Installation
 
 项目使用 Python 3.10，支持 Conda 和 uv。必需使用 uv 并且生成对应的 uv.lock 文件，才能保证 github Actions 上的测试通过。

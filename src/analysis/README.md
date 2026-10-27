@@ -1,5 +1,26 @@
 # 分析模块
 
+## 研究阶段分包
+
+原论文一致性及真实权重的 padding 核查入口为 `scripts/analysis/audit_meanvoiceflow_implementation.py`，仅读取本地 PDF、配置、缓存、权重和已有指标；结论见[B3 实现核对](../../docs/diagnostics/B3%E8%AE%BA%E6%96%87%E5%AE%9E%E7%8E%B0%E6%A0%B8%E5%AF%B9_20261026.md)。
+
+新增阶段代码按任务归类，命令行入口保留在 `scripts/analysis/`。训练模型、数据、权重和历史实验产物路径保持原样。
+
+| 目录 / 模块            | 职责                                                | 命令行入口                |
+| ---------------------- | --------------------------------------------------- | ------------------------- |
+| `p1/`                  | 最新基线评估、配对统计和延迟                        | `evaluate_p1_latest.py`   |
+| `p2/`                  | 验证清单、区间/JVP、条件与 source_time 诊断         | `evaluate_p2.py`          |
+| `endpoint_pilot/`      | 双臂采样计划、恢复训练、冻结评估和报告              | `run_endpoint_pilot.py`   |
+| `p4/`                  | 已有 B3 输出的身份分层、CAMPPlus 交叉评分与盲听准备 | `evaluate_p4_identity.py` |
+| `power_mel_adapter.py` | 共享功率 Mel 到 Vocos 适配                          | 由评估调用                |
+| `source_prosody.py`    | 共享源/参考韵律诊断                                 | 由评估调用                |
+
+`p1/` 包含 `evaluation.py`、`comparisons.py`、`latency.py`；`p2/` 包含 `common.py`、`intervals.py`、`precision.py`、`conversion.py`、`reporting.py`；`endpoint_pilot/` 包含 `data.py`、`training.py`、`evaluation.py`、`reporting.py`。
+
+导入路径随迁移更新，例如 `src.analysis.p2_intervals` 改为 `src.analysis.p2.intervals`，`src.analysis.endpoint_pilot_training` 改为 `src.analysis.endpoint_pilot.training`。仓库内调用与测试已同步；外部 Notebook 需同步更新导入。
+
+当前依赖方向是 `endpoint_pilot → p2 → p1 → unified/vocoder`，部分阶段共享工具仍在 `p1.evaluation` 中；本次只归类，不改变算法或继续拆分工具。不要新增从基础评估到后续研究阶段的反向导入。
+
 ## 入口与职责
 
 原有入口保持不变，调用脚本无需调整：

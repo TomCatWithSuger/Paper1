@@ -21,6 +21,7 @@ method:
   adaptive_loss_epsilon: 1.0e-3
   condition_encoder:
     _target_: src.models.components.conditioning.meanvc.CachedConditionEncoder
+    mask_padding_in_normalization: true
     content_dim: 256
     speaker_dim: 256
     output_dim: 128
