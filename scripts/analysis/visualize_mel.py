@@ -1,4 +1,4 @@
-"""读取 Mel 张量并输出热力图和数值统计。"""
+"""模块说明：读取 Mel 张量并输出热力图和数值统计。"""
 
 import argparse
 import sys

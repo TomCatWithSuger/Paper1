@@ -168,7 +168,10 @@ def interval_reports(output, metadata):
             (["r", "t", "delta"], "grid_summary"),
             (["interval_group", "partition"], "interval_by_partition"),
         ]:
-            _csv(output / name / f"{filename}.csv", summary(rows, fields, INTERVAL_METRICS))
+            _csv(
+                output / name / f"{filename}.csv",
+                summary(rows, fields, INTERVAL_METRICS),
+            )
         if name == "d1":
             for field in ["r_bin", "t_bin"]:
                 _csv(
@@ -179,7 +182,11 @@ def interval_reports(output, metadata):
         baseline = [r for r in rows if r["interval_group"] == "zero"]
         for group in ["short", "medium", "long", "full"]:
             selected = [r for r in rows if r["interval_group"] == group]
-            for metric in ["raw_mse_common", "velocity_mse_common", "raw_over_target_energy"]:
+            for metric in [
+                "raw_mse_common",
+                "velocity_mse_common",
+                "raw_over_target_energy",
+            ]:
                 a, b = source_means(selected, metric), source_means(baseline, metric)
                 ids = [
                     r["source_id"] for r in metadata if r["source_id"] in a and r["source_id"] in b
@@ -204,8 +211,8 @@ def quality_reports(output, metadata):
             donor.replace(" ", ""), hypothesis.replace(" ", "")
         ) / len(donor.replace(" ", ""))
         row["donor_wer"] = _edit_distance(donor.split(), hypothesis.split()) / len(donor.split())
-        row["target_preference_gap"] = (
-            row["target_speaker_similarity"] - row["source_speaker_similarity"]
+        row["target_preference_gap"] = float(row["target_speaker_similarity"]) - float(
+            row["source_speaker_similarity"]
         )
         row["target_preferred"] = float(row["target_preference_gap"] > 0)
     _csv(directory / "per_sample_enriched.csv", rows)
@@ -280,14 +287,18 @@ def endpoint_associations(output, metadata, quality):
         for weights in weights_for(meta):
             ids = np.repeat(np.arange(len(meta)), weights)
             if len(ids) >= 4 and len(set(ids)) > 3:
-                boot.append(float(spearmanr(xv[ids], yv[ids]).statistic))
+                coefficient = spearmanr(xv[ids], yv[ids])[0]
+                assert isinstance(coefficient, (float, np.floating))
+                boot.append(float(coefficient))
                 boot_partial.append(partial(xv[ids], yv[ids], duration[ids]))
+        coefficient = spearmanr(xv, yv)[0]
+        assert isinstance(coefficient, (float, np.floating))
         records.append(
             {
                 "metric": metric,
                 "outcome": "conversion_cer",
                 "n_sources": len(meta),
-                "spearman": float(spearmanr(xv, yv).statistic),
+                "spearman": float(coefficient),
                 "spearman_ci_low": float(np.nanpercentile(boot, 2.5)),
                 "spearman_ci_high": float(np.nanpercentile(boot, 97.5)),
                 "partial_pearson_log_duration": partial(xv, yv, duration),
@@ -344,7 +355,7 @@ def loss_reports(output, metadata):
     for metric in metrics:
         values = np.array(
             [
-                np.mean([r[metric] for r in selected if r["batch_index"] == block])
+                np.mean([float(r[metric]) for r in selected if r["batch_index"] == block])
                 for block in blocks
             ]
         )
@@ -366,18 +377,18 @@ def loss_reports(output, metadata):
     summaries = []
     for label in ["best", "last"]:
         audit = read(output / f"d2/{label}_original_val_pairing_audit.csv")
-        count = sum(r["batch_size"] for r in audit)
+        count = sum(float(r["batch_size"]) for r in audit)
         summaries.append(
             {
                 "checkpoint": label,
                 "audit_kind": "original_validation_pairing_algorithm",
                 "n_samples": count,
                 "n_batches": len(audit),
-                "requested_pseudo": sum(r["requested_pseudo"] for r in audit),
-                "effective_pseudo": sum(r["effective_pseudo"] for r in audit),
-                "fallback_pure_noise": sum(r["fallback_pure_noise"] for r in audit),
-                "intentional_pure_noise": sum(r["intentional_pure_noise"] for r in audit),
-                "effective_fraction": sum(r["effective_pseudo"] for r in audit) / count,
+                "requested_pseudo": sum(float(r["requested_pseudo"]) for r in audit),
+                "effective_pseudo": sum(float(r["effective_pseudo"]) for r in audit),
+                "fallback_pure_noise": sum(float(r["fallback_pure_noise"]) for r in audit),
+                "intentional_pure_noise": sum(float(r["intentional_pure_noise"]) for r in audit),
+                "effective_fraction": sum(float(r["effective_pseudo"]) for r in audit) / count,
             }
         )
         selected = [r for r in rows if r["checkpoint"] == label]

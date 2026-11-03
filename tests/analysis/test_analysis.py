@@ -1,4 +1,4 @@
-"""分析模块与命令行入口的回归测试。
+"""模块说明：分析模块与命令行入口的回归测试。
 
 使用临时 CSV 和人工构造的二维矩阵验证指标统计、文件输出及 Mel 抽样规则， 不依赖真实训练日志、音频或模型权重，也不会启动训练或下载资源。
 图表检查针对输出路径与部分文本内容，不等同于完整的视觉效果验证。 命令行帮助通过当前进程中的 runpy 执行，不验证独立进程的导入隔离。
@@ -149,7 +149,10 @@ def test_compare_outputs(
     with table_path.open(encoding="utf-8", newline="") as file:
         records = list(csv.DictReader(file))
     assert [record["experiment"] for record in records] == ["B1", "B2"]
-    assert [record["source"] for record in records] == [str(metrics_csv), str(other_csv)]
+    assert [record["source"] for record in records] == [
+        str(metrics_csv),
+        str(other_csv),
+    ]
     for record in records:
         assert record["metric"] == metric
         assert int(record["count"]) == 3

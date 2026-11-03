@@ -1,4 +1,4 @@
-"""核验 P4 配对完整性和噪声聚合，使用人工分数，不下载模型。"""
+"""模块说明：核验 P4 配对完整性和噪声聚合，使用人工分数，不下载模型。"""
 
 # ====================
 # 1. Imports
@@ -63,7 +63,8 @@ def test_repeated_noise_is_averaged_with_preference_before_aggregation(tmp_path)
 
 
 @pytest.mark.parametrize(
-    "mutation", ["duplicate", "missing", "seed", "reference", "nan", "time", "fractional_repeat"]
+    "mutation",
+    ["duplicate", "missing", "seed", "reference", "nan", "time", "fractional_repeat"],
 )
 def test_rejects_broken_pairing(tmp_path, mutation):
     rows = deepcopy(_rows(tmp_path))

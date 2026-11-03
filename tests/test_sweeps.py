@@ -1,3 +1,5 @@
+"""模块说明：验证实验配置组合、Hydra 多运行和超参数搜索入口。"""
+
 from pathlib import Path
 
 import pytest

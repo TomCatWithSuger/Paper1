@@ -1,12 +1,38 @@
-"""检查 P2 有效帧口径与真实方向导数有限差分，不加载预训练模型。"""
+"""模块说明：检查 P2 有效帧口径与真实方向导数有限差分，不加载预训练模型。"""
 
 import pytest
 import torch
 
 from src.analysis.p2.intervals import decompose_native, fd_statistics, masked_values
+from src.analysis.p2.reporting import read, source_means
+from src.models.algorithms.autodiff import tensor_jvp
 from src.models.components.conditioning.meanvc import CachedConditionEncoder
 from src.models.methods.generative.flow.mean_flow.meanvoiceflow import MeanVoiceFlow
 from src.models.networks.unet.conditional import UNet
+
+
+def test_csv_numeric_metrics_preserve_text_and_source_means(tmp_path):
+    path = tmp_path / "metrics.csv"
+    path.write_text(
+        "source_id,metric,label\na,1.5,control\na,2.5,intervention\n", encoding="utf-8"
+    )
+    rows = read(path)
+    assert rows[0] == {"source_id": "a", "metric": 1.5, "label": "control"}
+    assert source_means(rows, "metric") == {"a": 2.0}
+
+
+def test_tensor_jvp_preserves_values_and_backward_gradient():
+    values = torch.tensor([2.0, 3.0], requires_grad=True)
+    result, derivative = tensor_jvp(
+        lambda states: states.square(),
+        (values,),
+        (torch.ones_like(values),),
+        has_aux=False,
+    )
+    torch.testing.assert_close(result, values.square())
+    torch.testing.assert_close(derivative, 2 * values)
+    derivative.sum().backward()
+    torch.testing.assert_close(values.grad, torch.full_like(values, 2.0))
 
 
 def test_common_window_ignores_padding_and_equalizes_counts():
@@ -26,7 +52,7 @@ def test_fd_separates_state_time_and_fixed_start():
     def function(states, ends, starts):
         return states.square() + (ends - starts)[:, None, None] * states
 
-    _, automatic = torch.func.jvp(
+    _, automatic = tensor_jvp(
         function, (z, t, r), (velocity, torch.ones_like(t), torch.zeros_like(r))
     )
     h = 1e-4

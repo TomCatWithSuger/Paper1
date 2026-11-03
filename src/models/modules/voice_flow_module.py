@@ -1,13 +1,14 @@
-"""语音流方法共用的批适配、评估和检查点入口。"""
+"""模块说明：语音流方法共用的批适配、评估和检查点入口。"""
 
 from collections import OrderedDict
-from typing import Any
+from typing import Any, Literal, overload
 
 import torch
 from lightning import LightningModule
 from lightning.pytorch.utilities.types import OptimizerLRScheduler
 from torchmetrics import MeanMetric
 
+from src.models.methods.base import VoiceLoss, VoiceLossWithDiagnostics
 from src.optim.warmup_cosine import WarmupCosineLR
 
 
@@ -86,7 +87,37 @@ class VoiceFlowModule(LightningModule):
     def forward(self, *args, **kwargs):
         return self.method(*args, **kwargs)
 
-    def model_step(self, batch, generator=None, return_diagnostics=False):
+    @overload
+    def model_step(
+        self,
+        batch,
+        generator: torch.Generator | None = None,
+        return_diagnostics: Literal[False] = False,
+    ) -> VoiceLoss: ...
+
+    @overload
+    def model_step(
+        self,
+        batch,
+        generator: torch.Generator | None = None,
+        *,
+        return_diagnostics: Literal[True],
+    ) -> VoiceLossWithDiagnostics: ...
+
+    @overload
+    def model_step(
+        self,
+        batch,
+        generator: torch.Generator | None = None,
+        return_diagnostics: bool = False,
+    ) -> VoiceLoss | VoiceLossWithDiagnostics: ...
+
+    def model_step(
+        self,
+        batch,
+        generator: torch.Generator | None = None,
+        return_diagnostics: bool = False,
+    ) -> VoiceLoss | VoiceLossWithDiagnostics:
         values = self._training_data(batch)
         kwargs = {}
         if getattr(self.method, "requires_speaker_ids", False):
@@ -101,7 +132,8 @@ class VoiceFlowModule(LightningModule):
             else self.method.compute_loss(*values, generator=generator, **kwargs)
         )
         if return_diagnostics:
-            return (*result, {})
+            loss, prediction, target, states = result
+            return loss, prediction, target, states, {}
         return result
 
     def on_train_start(self):
@@ -219,7 +251,9 @@ class VoiceFlowModule(LightningModule):
         optimizer = self.optimizer_factory(params=self.parameters())
         if self.warmup_steps is not None:
             scheduler = WarmupCosineLR(
-                optimizer, int(self.trainer.estimated_stepping_batches), self.warmup_steps
+                optimizer,
+                int(self.trainer.estimated_stepping_batches),
+                self.warmup_steps,
             )
             return {
                 "optimizer": optimizer,

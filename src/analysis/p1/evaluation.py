@@ -8,7 +8,6 @@
 # 1. Imports
 # ====================
 
-import csv
 import json
 import math
 import shutil
@@ -19,7 +18,10 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import torch
+from torch.version import cuda as torch_cuda_version
 
+from src.analysis.p1.metrics import _aggregate as _aggregate
+from src.analysis.p1.metrics import _score_audio as _score_audio
 from src.analysis.power_mel_adapter import from_vocos_weights
 from src.analysis.source_prosody import compare_tracks, pitch_track
 from src.analysis.unified.checkpoints import (
@@ -36,6 +38,7 @@ from src.analysis.unified.data import (
 )
 from src.analysis.unified.identity import _sha256_file
 from src.analysis.unified.records import _load_ledger, _read_csv
+from src.analysis.unified.records import _write_table as _csv
 from src.analysis.unified_vc_evaluation import (
     _generate,
     _seed,
@@ -58,7 +61,11 @@ from src.analysis.vocoder.models import _AsrScorer, _load_vocos, _SpeakerScorer
 ROOT = Path(__file__).resolve().parents[3]
 VCTK = Path("/mnt/data2/home/tsx/project/data/VCTK")
 CACHE = ROOT / "data/meanvc_features/vctk"
-RUNS = {"B1": "2026-10-18_23-25-52", "B2": "2026-10-19_13-54-44", "B3": "2026-10-21_14-29-28"}
+RUNS = {
+    "B1": "2026-10-18_23-25-52",
+    "B2": "2026-10-19_13-54-44",
+    "B3": "2026-10-21_14-29-28",
+}
 BEST = {"B1": "epoch_382.ckpt", "B2": "epoch_382.ckpt", "B3": "epoch_040.ckpt"}
 SR = 22050
 SEED = 12345
@@ -71,16 +78,6 @@ SEED = 12345
 
 def _json(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
-def _csv(path, rows):
-    if not rows:
-        return
-    keys = list(dict.fromkeys(key for row in rows for key in row))
-    with path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=keys)
-        writer.writeheader()
-        writer.writerows(rows)
 
 
 def _sync(device):
@@ -117,7 +114,12 @@ def preflight(output: Path, device: torch.device):
     rows, by_id = _load_manifest_samples(manifest_path, VCTK, "mic1")
     assert len(rows) == 100 and len({r["source_id"] for r in rows}) == 100
     _validate_feature_cache(rows, CACHE)
-    plans, audit = [], {"models": {}, "cache_files": {}, "resource_files": {}, "source_files": {}}
+    plans, audit = [], {
+        "models": {},
+        "cache_files": {},
+        "resource_files": {},
+        "source_files": {},
+    }
     first_data = None
     for label, run in RUNS.items():
         run_dir = ROOT / "logs/train/runs" / run
@@ -140,7 +142,10 @@ def preflight(output: Path, device: torch.device):
 
         def capture(module, args):
             calls.append(
-                (args[0].detach().clone(), {k: v.detach().clone() for k, v in args[1].items()})
+                (
+                    args[0].detach().clone(),
+                    {k: v.detach().clone() for k, v in args[1].items()},
+                )
             )
 
         handle = model.method.network.register_forward_pre_hook(capture)
@@ -208,10 +213,13 @@ def preflight(output: Path, device: torch.device):
         audit["source_files"][str(path.relative_to(ROOT))] = _sha256_file(path)
     # decode 所需权重必须全部存在；仅允许多余的声学特征提取器权重。
     vocos = _load_vocos(
-        ROOT / "pretrained/vocos/config.yaml", ROOT / "pretrained/vocos/pytorch_model.bin"
+        ROOT / "pretrained/vocos/config.yaml",
+        ROOT / "pretrained/vocos/pytorch_model.bin",
     )
     state = torch.load(
-        ROOT / "pretrained/vocos/pytorch_model.bin", map_location="cpu", weights_only=True
+        ROOT / "pretrained/vocos/pytorch_model.bin",
+        map_location="cpu",
+        weights_only=True,
     )
     missing = sorted(set(vocos.state_dict()) - set(state))
     extra = sorted(set(state) - set(vocos.state_dict()))
@@ -226,10 +234,10 @@ def preflight(output: Path, device: torch.device):
     ds = _dataset((by_id[rows[0]["source_id"]], by_id[rows[0]["reference_id"]]), cfg, CACHE)
     waveform = ds[0]["waveform"]
     torch.testing.assert_close(
-        _collator(cfg)._log_mel(waveform), _project_log_mel(waveform, _ours_mel_filterbank())
+        _collator(cfg)._log_mel(waveform),
+        _project_log_mel(waveform, _ours_mel_filterbank()),
     )
     _csv(output / "experiment_plan.csv", plans)
-    audit["manifest_sha256"] = _sha256_file(manifest_path)
     audit["protocol"] = {
         "seed": "12345 + manifest.index",
         "source_time": 0.95,
@@ -241,57 +249,15 @@ def preflight(output: Path, device: torch.device):
         "mel_storage": "统一评估入口保存float16 Mel，声码器输入转float32",
         "prosody": "NCCF 16kHz/40ms窗/10ms帧移/60-500Hz/置信度0.6/RMS>=0.001；源按真实时间，参考按归一化时间；非DTW，诊断指标",
     }
-    _json(output / "preflight.json", audit)
+    _json(
+        output / "preflight.json",
+        {**audit, "manifest_sha256": _sha256_file(manifest_path)},
+    )
     _gpu_state(output / "gpu_preflight.txt")
     print(
         "预检通过：三组 strict 加载、固定种子、B3 真实源路径、200个缓存与声码器权重匹配。",
         flush=True,
     )
-
-
-def _aggregate(rows):
-    aggregates = []
-    for experiment in sorted({r["experiment_id"] for r in rows}):
-        group = [r for r in rows if r["experiment_id"] == experiment]
-        row = {"experiment_id": experiment, "sample_count": len(group)}
-        for key, value in group[0].items():
-            if isinstance(value, (int, float)) and key not in {"seed", "sample_index", "nfe"}:
-                values = np.array([r[key] for r in group], dtype=float)
-                values = values[np.isfinite(values)]
-                row[f"{key}_valid_n"] = len(values)
-                row[f"{key}_mean"] = float(values.mean()) if len(values) else math.nan
-                if "latency_ms" in key:
-                    for q in [50, 95]:
-                        row[f"{key}_p{q}"] = float(np.percentile(values, q))
-        row["cer_corpus"] = sum(r["char_edits"] for r in group) / sum(
-            r["reference_chars"] for r in group
-        )
-        row["wer_corpus"] = sum(r["word_edits"] for r in group) / sum(
-            r["reference_words"] for r in group
-        )
-        aggregates.append(row)
-    return aggregates
-
-
-def _score_audio(waveform, text, asr, speaker, source_embedding, reference_embedding):
-    scores = asr.score(waveform, text)
-    ref = _normalize_text(text, asr._normalizer)
-    hyp = _normalize_text(scores["asr_hyp"], asr._normalizer)
-    vector = speaker.embedding(waveform)
-    return {
-        **scores,
-        "normalized_reference": ref,
-        "normalized_hypothesis": hyp,
-        "char_edits": _edit_distance(ref.replace(" ", ""), hyp.replace(" ", "")),
-        "reference_chars": len(ref.replace(" ", "")),
-        "word_edits": _edit_distance(ref.split(), hyp.split()),
-        "reference_words": len(ref.split()),
-        "target_speaker_similarity": float((vector * reference_embedding).sum()),
-        "source_speaker_similarity": float((vector * source_embedding).sum()),
-        "waveform_rms": float(waveform.square().mean().sqrt()),
-        "waveform_peak": float(waveform.abs().max()),
-        "overrange_fraction": float((waveform.abs() > 1).float().mean()),
-    }
 
 
 def evaluate(output: Path, stage: str, device: torch.device):
@@ -318,7 +284,7 @@ def evaluate(output: Path, stage: str, device: torch.device):
             "stage": stage,
             "device": str(device),
             "torch": torch.__version__,
-            "cuda": torch.version.cuda,
+            "cuda": torch_cuda_version,
             "base_seed": SEED,
             "source_sha256": current_sources,
             "offline": True,
@@ -358,7 +324,9 @@ def evaluate(output: Path, stage: str, device: torch.device):
         device,
     )
     speaker_state = torch.load(
-        ROOT / "pretrained/meanvc/wavlm_large_finetune.pth", map_location="cpu", weights_only=True
+        ROOT / "pretrained/meanvc/wavlm_large_finetune.pth",
+        map_location="cpu",
+        weights_only=True,
     )["model"]
     missing = sorted(set(speaker.encoder.model.state_dict()) - set(speaker_state))
     extra = sorted(set(speaker_state) - set(speaker.encoder.model.state_dict()))
@@ -372,7 +340,8 @@ def evaluate(output: Path, stage: str, device: torch.device):
         assert tensor.shape == speaker_state[key].shape
     del speaker_state
     vocos = _load_vocos(
-        ROOT / "pretrained/vocos/config.yaml", ROOT / "pretrained/vocos/pytorch_model.bin"
+        ROOT / "pretrained/vocos/config.yaml",
+        ROOT / "pretrained/vocos/pytorch_model.bin",
     ).to(device)
     adapter = from_vocos_weights(ROOT / "pretrained/vocos/pytorch_model.bin")
     with torch.inference_mode():
@@ -482,7 +451,13 @@ def evaluate(output: Path, stage: str, device: torch.device):
             print(f"{stage} 原音/重建对照 {i}/{len(unique)}", flush=True)
     assert len(results) == len(manifest) * 6
     for row in results:
-        for metric in ["cer", "wer", "target_speaker_similarity", "mel_l1", "latency_ms"]:
+        for metric in [
+            "cer",
+            "wer",
+            "target_speaker_similarity",
+            "mel_l1",
+            "latency_ms",
+        ]:
             assert math.isfinite(row[metric])
     _csv(stage_dir / "per_sample_metrics.csv", results)
     _csv(stage_dir / "aggregate_metrics.csv", _aggregate(results))

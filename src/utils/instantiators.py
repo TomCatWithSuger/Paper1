@@ -1,3 +1,5 @@
+"""模块说明：按 Hydra 目标配置实例化回调和日志记录器。"""
+
 from typing import List
 
 import hydra

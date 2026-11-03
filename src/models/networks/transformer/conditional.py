@@ -1,4 +1,4 @@
-"""只预测条件速度场的 Transformer 网络。"""
+"""模块说明：只预测条件速度场的 Transformer 网络。"""
 
 from collections.abc import Mapping
 from math import log

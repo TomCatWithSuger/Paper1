@@ -1,4 +1,4 @@
-"""聚合 Mel 与效率指标并生成样本差异报告。"""
+"""模块说明：聚合 Mel 与效率指标并生成样本差异报告。"""
 
 # ====================
 # 1. Imports
@@ -88,7 +88,7 @@ def _difference_rows(
                 "b2_mel_l1": b2["mel_l1"],
                 "delta_mel_l1": delta_l1,
                 "delta_mel_l2_rmse": delta_l2,
-                "category": "提升" if delta_l1 < 0 else "下降" if delta_l1 > 0 else "不变",
+                "category": ("提升" if delta_l1 < 0 else "下降" if delta_l1 > 0 else "不变"),
             }
         )
     return rows, best_id

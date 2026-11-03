@@ -79,7 +79,13 @@ def _paired(rows, cohort, metric, a, b, metadata):
     )
     meta = [r for r in metadata if r["source_id"] in va and r["source_id"] in vb]
     result = mean_ci([va[r["source_id"]] - vb[r["source_id"]] for r in meta], meta)
-    return {"cohort": cohort, "experiment_a": a, "experiment_b": b, "metric": metric, **result}
+    return {
+        "cohort": cohort,
+        "experiment_a": a,
+        "experiment_b": b,
+        "metric": metric,
+        **result,
+    }
 
 
 # ====================
@@ -280,7 +286,11 @@ def evaluation_reports(output):
     )
     _csv(
         directory / "endpoint_by_length.csv",
-        summary(endpoint, ["cohort", "experiment_id", "interval", "length_bin"], ENDPOINT_METRICS),
+        summary(
+            endpoint,
+            ["cohort", "experiment_id", "interval", "length_bin"],
+            ENDPOINT_METRICS,
+        ),
     )
     comparisons, endpoint_comparisons = [], []
     for cohort, filename in [
@@ -326,7 +336,10 @@ def evaluation_reports(output):
                 "seed": r["seed"],
                 **{f"{metric}_control": control[metric] for metric in QUALITY_METRICS},
                 **{f"{metric}_intervention": r[metric] for metric in QUALITY_METRICS},
-                **{f"{metric}_delta": r[metric] - control[metric] for metric in QUALITY_METRICS},
+                **{
+                    f"{metric}_delta": float(r[metric]) - float(control[metric])
+                    for metric in QUALITY_METRICS
+                },
             }
         )
     _csv(directory / "control_intervention_per_sample.csv", sample_pairs)

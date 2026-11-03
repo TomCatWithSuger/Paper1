@@ -104,7 +104,10 @@ def make_plan(train_size, base_epoch, updates=PILOT_STEPS, batch_size=BATCH_SIZE
     # 三种流独立记录，额外端点抽样不会改变数据、裁剪或噪声。
     crop_seeds = torch.randint(1, 2**31 - 1, (updates, batch_size), generator=generator)
     noise_seeds = torch.randint(
-        1, 2**31 - 1, (updates, (batch_size + MICRO_BATCH - 1) // MICRO_BATCH), generator=generator
+        1,
+        2**31 - 1,
+        (updates, (batch_size + MICRO_BATCH - 1) // MICRO_BATCH),
+        generator=generator,
     )
     return {
         "indices": indices,
@@ -153,7 +156,7 @@ class PlannedDataset(Dataset):
         assert index >= 0
         state = torch.random.get_rng_state()
         try:
-            torch.random.default_generator.manual_seed(int(self.plan["crop_seeds"][step, slot]))
+            torch.default_generator.manual_seed(int(self.plan["crop_seeds"][step, slot]))
             item = self.dataset[index]
         finally:
             torch.random.set_rng_state(state)

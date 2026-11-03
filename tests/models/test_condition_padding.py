@@ -1,4 +1,4 @@
-"""验证条件归一化的有效帧不受批内 padding 影响，并保留旧权重行为。"""
+"""模块说明：验证条件归一化的有效帧不受批内 padding 影响，并保留旧权重行为。"""
 
 # ====================
 # 1. Imports
@@ -37,7 +37,10 @@ def test_masked_condition_values_and_gradients_ignore_extra_padding():
     encoder, content, lengths, speaker, mask = _case(True)
     plain = encoder(content, lengths, speaker, mask)
     plain.square().sum().backward()
-    first_gradients = [p.grad.clone() for p in encoder.parameters()]
+    first_gradients = []
+    for parameter in encoder.parameters():
+        assert parameter.grad is not None
+        first_gradients.append(parameter.grad.clone())
     encoder.zero_grad(set_to_none=True)
     padded = encoder(content, lengths, speaker, F.pad(mask, (0, 36), value=False))
     torch.testing.assert_close(plain, padded[:, :, :12], atol=1e-6, rtol=1e-6)

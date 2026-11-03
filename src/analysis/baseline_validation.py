@@ -1,4 +1,4 @@
-"""审计 B1、B2、B3 基线实验并生成可复现实验记录。"""
+"""模块说明：审计 B1、B2、B3 基线实验并生成可复现实验记录。"""
 
 # ====================
 # 1. Imports
@@ -65,7 +65,16 @@ def _execute(runs_root: Path, data_root: Path, output_dir: Path) -> dict[str, Pa
     _write_csv(
         paths["metrics"],
         metric_rows,
-        ("experiment", "run_dir", "metric", "count", "best", "best_step", "final", "final_step"),
+        (
+            "experiment",
+            "run_dir",
+            "metric",
+            "count",
+            "best",
+            "best_step",
+            "final",
+            "final_step",
+        ),
     )
     _write_csv(
         paths["conditions"],

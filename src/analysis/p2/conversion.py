@@ -112,7 +112,10 @@ def generate(output, device, smoke=False):
             # 统一连续布局，使各方法的同种子噪声顺序一致。
             source = batch["mel_spectrograms"].contiguous()
             mask = batch["mel_attention_mask"]
-            features, lengths = batch["content_features"], batch["content_feature_lengths"]
+            features, lengths = (
+                batch["content_features"],
+                batch["content_feature_lengths"],
+            )
             speaker_features = items[row["reference_id"]]["speaker_features"][None].to(device)
             applied_target = row["reference_id"]
             applied_text = row["source_text"]
@@ -145,16 +148,23 @@ def generate(output, device, smoke=False):
                         def verify(module, args):
                             torch.testing.assert_close(args[0], expected, atol=1e-6, rtol=1e-5)
                             torch.testing.assert_close(
-                                args[1]["source_time"], source.new_full((1,), source_time)
+                                args[1]["source_time"],
+                                source.new_full((1,), source_time),
                             )
                             captured.append(True)
 
                         handle = model.method.network.register_forward_pre_hook(verify)
                     _seed(seed, device)
-                    kwargs = {"integration_steps": 1}
                     if label == "B3":
-                        kwargs.update(source_mels=source, source_diffusion_time=source_time)
-                    generated = model.method.sample(condition, mask, **kwargs)
+                        generated = model.method.sample(
+                            condition,
+                            mask,
+                            integration_steps=1,
+                            source_mels=source,
+                            source_diffusion_time=source_time,
+                        )
+                    else:
+                        generated = model.method.sample(condition, mask, integration_steps=1)
                     if label == "B3":
                         handle.remove()
                         assert captured == [True]
@@ -224,7 +234,8 @@ def score(output, device, smoke=False):
     items = prepared_items(manifest, config, by_id)
     records = _rows(directory / "generation.jsonl")
     vocos = _load_vocos(
-        ROOT / "pretrained/vocos/config.yaml", ROOT / "pretrained/vocos/pytorch_model.bin"
+        ROOT / "pretrained/vocos/config.yaml",
+        ROOT / "pretrained/vocos/pytorch_model.bin",
     ).to(device)
     adapter = from_vocos_weights(ROOT / "pretrained/vocos/pytorch_model.bin")
     asr = _AsrScorer(ROOT / "pretrained/whisper-small", device)
@@ -251,7 +262,11 @@ def score(output, device, smoke=False):
     for index, row in enumerate(records):
         if (row["experiment_id"], row["source_id"], row["repeat"]) in completed:
             continue
-        source_id, reference_id, donor_id = row["source_id"], row["reference_id"], row["donor_id"]
+        source_id, reference_id, donor_id = (
+            row["source_id"],
+            row["reference_id"],
+            row["donor_id"],
+        )
         payload = torch.load(row["generated_path"], map_location="cpu", weights_only=True)
         with torch.inference_mode():
             waveform = vocos.decode(adapter(payload["mel"]).unsqueeze(0).to(device))[0].cpu()
@@ -339,7 +354,8 @@ def controls(output, device):
     config, _, by_id = load_samples()
     items = prepared_items(manifest, config, by_id)
     vocos = _load_vocos(
-        ROOT / "pretrained/vocos/config.yaml", ROOT / "pretrained/vocos/pytorch_model.bin"
+        ROOT / "pretrained/vocos/config.yaml",
+        ROOT / "pretrained/vocos/pytorch_model.bin",
     ).to(device)
     adapter = from_vocos_weights(ROOT / "pretrained/vocos/pytorch_model.bin")
     asr = _AsrScorer(ROOT / "pretrained/whisper-small", device)

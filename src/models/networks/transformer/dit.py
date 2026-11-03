@@ -1,4 +1,4 @@
-"""时间条件的一维波形 Transformer。"""
+"""模块说明：时间条件的一维波形 Transformer。"""
 
 from torch import nn
 

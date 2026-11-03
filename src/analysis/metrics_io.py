@@ -1,4 +1,4 @@
-"""训练指标读取工具。
+"""模块说明：训练指标读取工具。
 
 - 定位 Lightning CSV logger 生成的 ``metrics.csv``。
 - 提取按 epoch 或 step 排序的指标序列。

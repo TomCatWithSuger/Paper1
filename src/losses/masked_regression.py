@@ -1,4 +1,4 @@
-"""有效 Mel 帧上的回归损失。"""
+"""模块说明：有效 Mel 帧上的回归损失。"""
 
 import torch
 import torch.nn.functional as F

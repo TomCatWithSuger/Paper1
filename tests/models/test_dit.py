@@ -1,3 +1,5 @@
+"""模块说明：验证波形 DiT 输出形状及训练步骤。"""
+
 import torch
 
 from src.models.methods.generative.flow.flow_matching import FlowMatching

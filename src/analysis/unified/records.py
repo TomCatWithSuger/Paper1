@@ -1,4 +1,4 @@
-"""读写统一评估清单、表格与逐样本账本。"""
+"""模块说明：读写统一评估清单、表格与逐样本账本。"""
 
 # ====================
 # 1. Imports
@@ -26,6 +26,13 @@ def _write_csv(path: Path, rows: Sequence[dict[str, Any]], fields: Sequence[str]
         writer = csv.DictWriter(file, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _write_table(path: Path, rows: Sequence[dict[str, Any]]) -> None:
+    """按字段首次出现顺序写表；空记录不创建文件。"""
+    if rows:
+        fields = list(dict.fromkeys(key for row in rows for key in row))
+        _write_csv(path, rows, fields)
 
 
 def _load_ledger(path: Path) -> list[dict[str, Any]]:

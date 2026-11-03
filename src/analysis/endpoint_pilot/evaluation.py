@@ -16,6 +16,7 @@ import hydra
 import numpy as np
 import torch
 from omegaconf import OmegaConf
+from torch.version import cuda as torch_cuda_version
 
 from src.analysis.endpoint_pilot.training import BASE_CHECKPOINT, safe_load
 from src.analysis.p1.evaluation import (
@@ -35,6 +36,7 @@ from src.analysis.unified.data import _collator
 from src.analysis.unified.identity import _sha256_file
 from src.analysis.unified_vc_evaluation import _seed
 from src.analysis.vocoder.models import _AsrScorer, _load_vocos, _SpeakerScorer
+from src.models.algorithms.autodiff import tensor_jvp
 
 # ====================
 # 3. Utilities
@@ -101,7 +103,7 @@ def generate(output, device):
         directory / "runtime.json",
         {
             "torch": torch.__version__,
-            "cuda": torch.version.cuda,
+            "cuda": torch_cuda_version,
             "device": str(device),
             "tf32": False,
             "source_sha256": sources,
@@ -213,9 +215,10 @@ def generate(output, device):
                             z = model.method.interpolate(source, noise, ts)
 
                             def f(states, ends, starts):
+                                assert model is not None
                                 return model.method(states, starts, ends, self_condition, mask)
 
-                            prediction, derivative = torch.func.jvp(
+                            prediction, derivative = tensor_jvp(
                                 f,
                                 (z, ts, rs),
                                 (velocity, torch.ones_like(ts), torch.zeros_like(rs)),
@@ -251,7 +254,10 @@ def generate(output, device):
                             assert np.isfinite(record["raw_mse"])
                             _append(directory / "endpoint_diagnostics.jsonl", record)
                 if (index + 1) % 16 == 0:
-                    print(f"pilot生成/端点 {cohort} {arm} {index+1}/{len(manifest)}", flush=True)
+                    print(
+                        f"pilot生成/端点 {cohort} {arm} {index+1}/{len(manifest)}",
+                        flush=True,
+                    )
             model = None
             torch.cuda.empty_cache()
     _json(directory / "models.json", identities)
@@ -285,7 +291,8 @@ def score(output, device):
         device,
     )
     vocos = _load_vocos(
-        ROOT / "pretrained/vocos/config.yaml", ROOT / "pretrained/vocos/pytorch_model.bin"
+        ROOT / "pretrained/vocos/config.yaml",
+        ROOT / "pretrained/vocos/pytorch_model.bin",
     ).to(device)
     adapter = from_vocos_weights(ROOT / "pretrained/vocos/pytorch_model.bin")
     embeddings, tracks = {}, {}

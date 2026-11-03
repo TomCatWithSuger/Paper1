@@ -1,4 +1,4 @@
-"""带流时间调制的 Transformer 基础块。"""
+"""模块说明：带流时间调制的 Transformer 基础块。"""
 
 from torch import nn
 
@@ -14,7 +14,9 @@ class ConditionalTransformerBlock(nn.Module):
         self.attention = nn.MultiheadAttention(hidden_dim, num_heads, batch_first=True)
         self.norm2 = nn.LayerNorm(hidden_dim)
         self.feed_forward = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim * 4), nn.GELU(), nn.Linear(hidden_dim * 4, hidden_dim)
+            nn.Linear(hidden_dim, hidden_dim * 4),
+            nn.GELU(),
+            nn.Linear(hidden_dim * 4, hidden_dim),
         )
         self.modulation = nn.Linear(condition_dim, hidden_dim * 4)
 

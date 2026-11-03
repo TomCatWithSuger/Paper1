@@ -1,4 +1,4 @@
-"""使用 MeanVC 预训练模型提取内容条件和说话人条件。"""
+"""模块说明：使用 MeanVC 预训练模型提取内容条件和说话人条件。"""
 
 import importlib.util
 from collections.abc import Callable

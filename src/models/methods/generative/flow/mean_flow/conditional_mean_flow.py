@@ -1,12 +1,17 @@
-"""条件 MeanFlow 的反向线性路径与停止梯度 JVP 目标。"""
+"""模块说明：条件 MeanFlow 的反向线性路径与停止梯度 JVP 目标。"""
 
-from collections.abc import Callable
-from typing import cast
+from typing import Literal, overload
 
 import torch
 from torch import nn
 
-from src.models.methods.base import VoiceMethod, reject_inference_mode_jvp
+from src.models.algorithms.autodiff import tensor_jvp
+from src.models.methods.base import (
+    VoiceLoss,
+    VoiceLossWithDiagnostics,
+    VoiceMethod,
+    reject_inference_mode_jvp,
+)
 
 
 class ConditionalMeanFlow(VoiceMethod):
@@ -103,6 +108,32 @@ class ConditionalMeanFlow(VoiceMethod):
             "jvp_correction_rms": masked_mean(jvp_correction.square()).sqrt(),
         }
 
+    @overload
+    def compute_loss(
+        self,
+        target_mels: torch.Tensor,
+        target_mask: torch.Tensor,
+        content_features: torch.Tensor,
+        content_lengths: torch.Tensor,
+        speaker_features: torch.Tensor,
+        generator: torch.Generator | None = None,
+        return_diagnostics: Literal[False] = False,
+    ) -> VoiceLoss: ...
+
+    @overload
+    def compute_loss(
+        self,
+        target_mels: torch.Tensor,
+        target_mask: torch.Tensor,
+        content_features: torch.Tensor,
+        content_lengths: torch.Tensor,
+        speaker_features: torch.Tensor,
+        generator: torch.Generator | None = None,
+        *,
+        return_diagnostics: Literal[True],
+    ) -> VoiceLossWithDiagnostics: ...
+
+    @overload
     def compute_loss(
         self,
         target_mels: torch.Tensor,
@@ -112,10 +143,18 @@ class ConditionalMeanFlow(VoiceMethod):
         speaker_features: torch.Tensor,
         generator: torch.Generator | None = None,
         return_diagnostics: bool = False,
-    ) -> (
-        tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
-        | tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]
-    ):
+    ) -> VoiceLoss | VoiceLossWithDiagnostics: ...
+
+    def compute_loss(
+        self,
+        target_mels: torch.Tensor,
+        target_mask: torch.Tensor,
+        content_features: torch.Tensor,
+        content_lengths: torch.Tensor,
+        speaker_features: torch.Tensor,
+        generator: torch.Generator | None = None,
+        return_diagnostics: bool = False,
+    ) -> VoiceLoss | VoiceLossWithDiagnostics:
         """返回平均速度损失、预测、JVP 目标和路径状态；可选附带诊断标量。"""
         reject_inference_mode_jvp()
         condition = self.encode_condition(
@@ -128,7 +167,10 @@ class ConditionalMeanFlow(VoiceMethod):
             generator=generator,
         )
         start_times, end_times = self._sample_time_intervals(
-            target_mels.size(0), target_mels.device, target_mels.dtype, generator=generator
+            target_mels.size(0),
+            target_mels.device,
+            target_mels.dtype,
+            generator=generator,
         )
         path_samples = self.interpolate(target_mels, noise, end_times)
         instantaneous_velocity = noise - target_mels
@@ -137,11 +179,11 @@ class ConditionalMeanFlow(VoiceMethod):
             return self(states, interval_starts, times, condition, target_mask)
 
         predicted_velocity = average_velocity(path_samples, end_times, start_times)
-        with torch.no_grad(), torch.autocast(device_type=target_mels.device.type, enabled=False):
-            jvp_fn = cast(
-                Callable[..., tuple[torch.Tensor, torch.Tensor]], getattr(torch.func, "jvp")
-            )
-            _, total_derivative = jvp_fn(
+        with (
+            torch.no_grad(),
+            torch.autocast(device_type=target_mels.device.type, enabled=False),
+        ):
+            _, total_derivative = tensor_jvp(
                 average_velocity,
                 (path_samples, end_times, start_times),
                 (

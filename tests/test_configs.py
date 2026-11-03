@@ -1,3 +1,5 @@
+"""模块说明：验证训练、评估配置实例化及受控实验默认条件。"""
+
 from pathlib import Path
 
 import hydra
@@ -43,10 +45,12 @@ def test_b1_b2_controlled_defaults() -> None:
     config_dir = Path(__file__).resolve().parents[1] / "configs"
     with hydra.initialize_config_dir(version_base="1.3", config_dir=str(config_dir)):
         baseline = hydra.compose(
-            config_name="train.yaml", overrides=["experiment=conditional_flow_matching_vctk"]
+            config_name="train.yaml",
+            overrides=["experiment=conditional_flow_matching_vctk"],
         )
         mean_flow = hydra.compose(
-            config_name="train.yaml", overrides=["experiment=conditional_mean_flow_vctk"]
+            config_name="train.yaml",
+            overrides=["experiment=conditional_mean_flow_vctk"],
         )
         mean_voice_flow = hydra.compose(
             config_name="train.yaml", overrides=["experiment=meanvoiceflow_vctk"]
@@ -86,11 +90,13 @@ def test_b1_b2_controlled_defaults() -> None:
     assert baseline.model.method.condition_encoder == mean_flow.model.method.condition_encoder
     baseline_network = OmegaConf.to_container(baseline.model.method.network)
     mean_flow_network = OmegaConf.to_container(mean_flow.model.method.network)
+    assert isinstance(baseline_network, dict) and isinstance(mean_flow_network, dict)
     assert baseline_network.pop("time_fields") == ["time"]
     assert mean_flow_network.pop("time_fields") == ["time", "interval"]
     assert baseline_network == mean_flow_network
     baseline_trainer = OmegaConf.to_container(baseline.trainer)
     mean_flow_trainer = OmegaConf.to_container(mean_flow.trainer)
+    assert isinstance(baseline_trainer, dict) and isinstance(mean_flow_trainer, dict)
     assert mean_flow_trainer.pop("inference_mode") is False
     baseline_trainer.pop("inference_mode", None)
     assert baseline_trainer == mean_flow_trainer

@@ -1,17 +1,28 @@
-"""非语音模型的分层配置和 Lightning 生命周期回归。"""
+"""模块说明：非语音模型的分层配置和 Lightning 生命周期回归。"""
 
+from copy import deepcopy
 from pathlib import Path
 from typing import cast
 
 import pytest
 import torch
 from hydra.utils import instantiate
-from lightning import Trainer
+from lightning import Callback, Trainer
 from omegaconf import OmegaConf
 from torch.utils.data import DataLoader, Dataset
 
 ROOT = Path(__file__).resolve().parents[2]
-CASES = ("ae", "vae", "gan", "ddpm", "flow_matching", "score_based", "dit", "unet", "mnist")
+CASES = (
+    "ae",
+    "vae",
+    "gan",
+    "ddpm",
+    "flow_matching",
+    "score_based",
+    "dit",
+    "unet",
+    "mnist",
+)
 MODEL_CONFIGS = sorted((ROOT / "configs" / "model").glob("*.yaml"))
 
 
@@ -31,7 +42,9 @@ def small_config(name):
         network.update(hidden_dims=[16, 8], latent_dim=4)
     elif name == "gan":
         network.update(
-            latent_dim=4, generator_hidden_dims=[8, 16], discriminator_hidden_dims=[16, 8]
+            latent_dim=4,
+            generator_hidden_dims=[8, 16],
+            discriminator_hidden_dims=[16, 8],
         )
     elif name in ("ddpm", "flow_matching", "score_based"):
         network.hidden_dims = [16, 8]
@@ -80,7 +93,8 @@ def test_all_configs_lightning_lifecycle(name):
     trainer.test(module, dataloaders=loader)
     predict_loader = (
         DataLoader(
-            cast(Dataset, [cast(tuple[torch.Tensor, torch.Tensor], values)[0]]), batch_size=None
+            cast(Dataset, [cast(tuple[torch.Tensor, torch.Tensor], values)[0]]),
+            batch_size=None,
         )
         if name == "mnist"
         else loader
@@ -94,3 +108,74 @@ def test_old_production_files_are_removed():
     assert not (models / "legacy").exists()
     assert sorted(path.name for path in models.glob("*.py")) == ["__init__.py"]
     assert sorted(path.name for path in (models / "components").glob("*.py")) == ["__init__.py"]
+
+
+@pytest.mark.parametrize("name", ["gan", "flow_matching"])
+def test_checkpoint_restores_training_state_before_next_update(name, tmp_path):
+    cfg = small_config(name)
+    if name == "flow_matching":
+        cfg.scheduler = {
+            "_target_": "torch.optim.lr_scheduler.StepLR",
+            "_partial_": True,
+            "step_size": 1,
+            "gamma": 0.5,
+        }
+    loader = DataLoader(cast(Dataset, [batch(name)]), batch_size=None)
+
+    def make_trainer(max_epochs, callbacks=None):
+        return Trainer(
+            max_epochs=max_epochs,
+            callbacks=callbacks,
+            accelerator="cpu",
+            devices=1,
+            logger=False,
+            enable_checkpointing=False,
+            enable_model_summary=False,
+            enable_progress_bar=False,
+            num_sanity_val_steps=0,
+            default_root_dir=tmp_path,
+        )
+
+    original = instantiate(cfg)
+    trainer = make_trainer(max_epochs=1)
+    trainer.fit(original, train_dataloaders=loader, val_dataloaders=loader)
+    checkpoint = tmp_path / f"{name}.ckpt"
+    trainer.save_checkpoint(checkpoint)
+    expected_model = deepcopy(original.method.state_dict())
+    expected_optimizers = [deepcopy(optimizer.state_dict()) for optimizer in trainer.optimizers]
+    expected_schedulers = [
+        deepcopy(config.scheduler.state_dict()) for config in trainer.lr_scheduler_configs
+    ]
+    previous_step = trainer.global_step
+
+    class VerifyRestoration(Callback):
+        checked = False
+
+        def on_train_start(self, trainer, pl_module):
+            torch.testing.assert_close(
+                pl_module.method.state_dict(), expected_model, rtol=0, atol=0
+            )
+            torch.testing.assert_close(
+                [optimizer.state_dict() for optimizer in trainer.optimizers],
+                expected_optimizers,
+                rtol=0,
+                atol=0,
+            )
+            assert [
+                config.scheduler.state_dict() for config in trainer.lr_scheduler_configs
+            ] == expected_schedulers
+            assert trainer.global_step == previous_step
+            self.checked = True
+
+    verification = VerifyRestoration()
+    restored = instantiate(cfg)
+    resumed_trainer = make_trainer(max_epochs=2, callbacks=[verification])
+    resumed_trainer.fit(
+        restored, train_dataloaders=loader, val_dataloaders=loader, ckpt_path=checkpoint
+    )
+    assert verification.checked
+    assert resumed_trainer.global_step > previous_step
+    assert any(
+        not torch.equal(value, expected_model[key])
+        for key, value in restored.method.state_dict().items()
+    )

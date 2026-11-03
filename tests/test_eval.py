@@ -1,3 +1,5 @@
+"""模块说明：验证训练后从检查点启动独立评估并保持指标一致。"""
+
 import os
 from pathlib import Path
 

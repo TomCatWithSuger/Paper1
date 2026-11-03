@@ -1,4 +1,4 @@
-"""由显式时间字段驱动的条件语音 U-Net。"""
+"""模块说明：由显式时间字段驱动的条件语音 U-Net。"""
 
 from collections.abc import Mapping, Sequence
 
@@ -63,7 +63,12 @@ class ConditionalUNetBackbone(nn.Module):
         self.upsample2 = GatedConvTranspose1d(hidden_channels)
         self.decoder_block2 = GatedConv1d(hidden_channels, hidden_channels, kernel_size)
         self.output_conv = weight_norm(
-            nn.Conv1d(hidden_channels, n_mels, kernel_size=kernel_size, padding=kernel_size // 2)
+            nn.Conv1d(
+                hidden_channels,
+                n_mels,
+                kernel_size=kernel_size,
+                padding=kernel_size // 2,
+            )
         )
 
     def _validate_inputs(
@@ -179,7 +184,7 @@ class UNet(ConditionalUNetBackbone):
         # 保留旧参数注册顺序，确保初始化随机数和优化器参数顺序不变。
         for field in fields[1:]:
             self.add_module(
-                "source_diffusion_embedding" if field == "source_time" else f"{field}_embedding",
+                ("source_diffusion_embedding" if field == "source_time" else f"{field}_embedding"),
                 nn.Sequential(
                     ContinuousTimeEmbedding(time_embedding_dim),
                     nn.Linear(time_embedding_dim, hidden_channels),

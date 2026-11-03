@@ -1,8 +1,10 @@
-"""无条件流匹配方法。"""
+"""模块说明：无条件流匹配方法。"""
 
 import torch
 import torch.nn.functional as F
 from torch import nn
+
+from src.models.algorithms.flow import euler_integrate, linear_path
 
 
 class FlowMatching(nn.Module):
@@ -18,8 +20,7 @@ class FlowMatching(nn.Module):
     @staticmethod
     def interpolate(data, noise, times):
         """在线性概率路径上插值噪声与数据。"""
-        times = times.view((times.size(0),) + (1,) * (data.ndim - 1))
-        return (1.0 - times) * noise + times * data
+        return linear_path(data, noise, times)
 
     def forward(self, data, times):
         return self.network(data, times)
@@ -35,6 +36,8 @@ class FlowMatching(nn.Module):
         path = self.interpolate(data, noise, times)
         target = data - noise
         prediction = self(path, times)
+        if prediction.shape != target.shape:
+            raise ValueError("速度场输出必须与目标形状一致")
         return F.mse_loss(prediction, target), prediction, target, path
 
     @torch.no_grad()
@@ -47,13 +50,7 @@ class FlowMatching(nn.Module):
         return self._integrate(samples, steps)
 
     def _integrate(self, samples, steps):
-        step_size = 1.0 / steps
-        for step in range(steps):
-            times = torch.full(
-                (samples.size(0),), step / steps, device=samples.device, dtype=samples.dtype
-            )
-            samples = samples + step_size * self(samples, times)
-        return samples
+        return euler_integrate(self, samples, steps)
 
     @torch.no_grad()
     def sample_waveform(self, num_frames, device, integration_steps=None):

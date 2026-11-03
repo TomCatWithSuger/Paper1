@@ -1,4 +1,4 @@
-"""核验端点干预隔离与完整有效帧加权梯度累计，不加载预训练模型。"""
+"""模块说明：核验端点干预隔离与完整有效帧加权梯度累计，不加载预训练模型。"""
 
 # ====================
 # 1. Imports
@@ -37,7 +37,7 @@ def test_intervention_only_replaces_nonzero_time_pairs():
         assert torch.equal(r0 == t0, r1 == t1)
         assert torch.equal(r0[~gate], r1[~gate]) and torch.equal(t0[~gate], t1[~gate])
         assert (r1[gate] == 0).all() and (t1[gate] == 1).all()
-        assert ((r0[gate] < t0[gate])).all()
+        assert (r0[gate] < t0[gate]).all()
         zero += int((r0 == t0).sum())
         changed += int(gate.sum())
         total += len(r0)
@@ -89,7 +89,7 @@ def test_microbatch_accumulation_matches_full_native_masked_gradient():
 
 def test_last_checkpoint_is_real_latest_update_and_preserves_optimizer(tmp_path):
     model = torch.nn.Linear(1, 1)
-    model.hparams = {}
+    setattr(model, "hparams", {})
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     scheduler = WarmupCosineLR(optimizer, total_steps=10, warmup_steps=0)
     plan = {

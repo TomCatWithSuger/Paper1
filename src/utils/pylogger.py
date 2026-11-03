@@ -1,3 +1,5 @@
+"""模块说明：提供支持分布式进程等级控制的日志记录器。"""
+
 import logging
 from typing import Mapping, Optional
 

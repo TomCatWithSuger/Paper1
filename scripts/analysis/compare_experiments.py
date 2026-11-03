@@ -1,4 +1,4 @@
-"""对比多个 Lightning 实验的最优和最终指标。"""
+"""模块说明：对比多个 Lightning 实验的最优和最终指标。"""
 
 import argparse
 import sys

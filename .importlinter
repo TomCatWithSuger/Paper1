@@ -1,0 +1,40 @@
+[importlinter]
+root_package = src
+include_external_packages = True
+
+[importlinter:contract:model-layers]
+name = Model layer direction
+type = layers
+layers =
+    src.models.modules
+    src.models.methods
+    src.models.networks
+    src.models.components
+
+[importlinter:contract:framework-free-core]
+name = Core does not depend on the training framework
+type = forbidden
+source_modules =
+    src.models.methods
+    src.models.networks
+    src.models.components
+    src.models.algorithms
+    src.losses
+forbidden_modules =
+    lightning
+    pytorch_lightning
+    src.train
+    src.eval
+    src.data
+    src.analysis
+
+[importlinter:contract:independent-math]
+name = Math does not depend on concrete models
+type = forbidden
+source_modules =
+    src.models.algorithms
+    src.losses
+forbidden_modules =
+    src.models.methods
+    src.models.networks
+    src.models.modules

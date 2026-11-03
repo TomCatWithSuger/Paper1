@@ -10,21 +10,26 @@ on:
 jobs:
   code-quality:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Conda
+        uses: conda-incubator/setup-miniconda@v3
         with:
-          python-version: "3.10"
-
-      - name: Install uv
-        run: pip install uv
-
-      - name: Sync development dependencies
-        run: uv sync --locked --only-dev
+          activate-environment: Lightning-Template
+          environment-file: environment.yaml
+          auto-activate-base: false
 
       - name: Run pre-commit
-        run: uv run --no-sync pre-commit run --all-files --show-diff-on-failure
+        env:
+          SKIP: research-quality
+        run: pre-commit run --all-files --show-diff-on-failure
+
+      - name: Run research quality gates
+        if: ${{ !cancelled() }}
+        run: python scripts/quality.py all

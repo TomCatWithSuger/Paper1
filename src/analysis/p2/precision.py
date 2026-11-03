@@ -17,6 +17,7 @@ from src.analysis.p2.common import (
 )
 from src.analysis.p2.intervals import fd_statistics
 from src.analysis.unified.data import _collator
+from src.models.algorithms.autodiff import tensor_jvp
 
 # ====================
 # 6. Public API
@@ -44,7 +45,9 @@ def run(output, device):
                 mask,
             )
             noise = torch.randn(
-                x.shape, generator=torch.Generator(device=device).manual_seed(8192), device=device
+                x.shape,
+                generator=torch.Generator(device=device).manual_seed(8192),
+                device=device,
             )
             velocity = noise - x
             r, t = x.new_full((4,), 0.2), x.new_full((4,), 0.7)
@@ -53,7 +56,7 @@ def run(output, device):
             def function(states, ends, starts):
                 return model.method(states, starts, ends, condition, mask)
 
-            _, derivative = torch.func.jvp(
+            _, derivative = tensor_jvp(
                 function, (z, t, r), (velocity, torch.ones_like(t), torch.zeros_like(r))
             )
             derivatives[enabled] = derivative
@@ -116,7 +119,7 @@ def run_endpoint(output, device):
             def f(states, ends, starts):
                 return model.method(states, starts, ends, c, mask)
 
-            primal, derivative = torch.func.jvp(
+            primal, derivative = tensor_jvp(
                 f, (z, t, r), (v, torch.ones_like(t), torch.zeros_like(r))
             )
             for epsilon in (0.01, 0.003, 0.001, 0.0003):

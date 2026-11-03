@@ -1,4 +1,6 @@
-"""Adapted from:
+"""模块说明：按依赖、设备和运行条件决定是否跳过测试。
+
+Adapted from:
 
 https://github.com/PyTorchLightning/pytorch-lightning/blob/master/tests/helpers/runif.py
 """

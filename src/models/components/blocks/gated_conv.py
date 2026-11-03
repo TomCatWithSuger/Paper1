@@ -1,4 +1,4 @@
-"""使用权重归一化和 GLU 的一维门控卷积。"""
+"""模块说明：使用权重归一化和 GLU 的一维门控卷积。"""
 
 import torch
 import torch.nn.functional as F

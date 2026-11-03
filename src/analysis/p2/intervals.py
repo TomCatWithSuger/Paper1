@@ -30,6 +30,7 @@ from src.analysis.p2.common import (
     seed_for,
 )
 from src.analysis.unified.data import _collator, _dataset
+from src.models.algorithms.autodiff import tensor_jvp
 
 # ====================
 # 3. Utilities
@@ -113,7 +114,7 @@ def b2_intervals(output, device, limit=None, grid=None, directory_name=None, che
                     def function(states, times, starts):
                         return model.method(states, starts, times, condition, mask)
 
-                    prediction, derivative = torch.func.jvp(
+                    prediction, derivative = tensor_jvp(
                         function,
                         (z, ts, rs),
                         (velocity, torch.ones_like(ts), torch.zeros_like(rs)),
@@ -192,8 +193,10 @@ def b2_intervals(output, device, limit=None, grid=None, directory_name=None, che
             def function(states, times, starts):
                 return model.method(states, starts, times, condition, mask)
 
-            _, derivative = torch.func.jvp(
-                function, (z, ts, rs), (velocity, torch.ones_like(ts), torch.zeros_like(rs))
+            _, derivative = tensor_jvp(
+                function,
+                (z, ts, rs),
+                (velocity, torch.ones_like(ts), torch.zeros_like(rs)),
             )
             for epsilon in (0.01, 0.003, 0.001, 0.0003):
                 finite = (
@@ -273,14 +276,14 @@ def decompose_native(method, batch, generator):
     adaptive = energy / (energy + method.adaptive_loss_epsilon)
     velocity = captured["prior"] - x
     correction = velocity - target
-    ssim = torch.stack(
+    ssim_values = torch.stack(
         [
             ssim_fn(captured["zero_prediction"][i : i + 1], x[i : i + 1], mask[i : i + 1])
             for i in range(len(x))
         ]
     )
     torch.testing.assert_close(
-        total, adaptive.mean() + method.zero_reconstruction_weight * ssim.mean()
+        total, adaptive.mean() + method.zero_reconstruction_weight * ssim_values.mean()
     )
     rows = []
     for i in range(len(x)):
@@ -292,9 +295,11 @@ def decompose_native(method, batch, generator):
                 "error_energy": float(energy[i]),
                 "adaptive_loss": float(adaptive[i]),
                 "adaptive_gradient_weight": float(1 / (energy[i] + method.adaptive_loss_epsilon)),
-                "ssim_loss": float(ssim[i]),
-                "margin_hit": float(ssim[i] <= method.zero_reconstruction_margin + 1e-6),
-                "total_loss": float(adaptive[i] + method.zero_reconstruction_weight * ssim[i]),
+                "ssim_loss": float(ssim_values[i]),
+                "margin_hit": float(ssim_values[i] <= method.zero_reconstruction_margin + 1e-6),
+                "total_loss": float(
+                    adaptive[i] + method.zero_reconstruction_weight * ssim_values[i]
+                ),
                 "native_batch_total": float(total),
                 "jvp_correction_rms": float(masked_values(correction.square(), mask)[i].sqrt()),
                 "velocity_mse": float(masked_values((prediction - velocity).square(), mask)[i]),
@@ -442,7 +447,13 @@ def run(output, stage, device, limit=None):
             ("long", 0.1, 0.9),
             ("full", 0.0, 1.0),
         ]
-        b2_intervals(output, device, grid=grid, directory_name="d1_center_matched", check_fd=False)
+        b2_intervals(
+            output,
+            device,
+            grid=grid,
+            directory_name="d1_center_matched",
+            check_fd=False,
+        )
     elif stage == "d1_boundary":
         grid = [
             ("zero", 1.0, 1.0),

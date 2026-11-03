@@ -54,6 +54,7 @@ def main():
     parser.add_argument("--device", default="cuda:0")
     args = parser.parse_args()
     import torch
+    from torch.version import cuda as torch_cuda_version
 
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.allow_tf32 = False
@@ -69,7 +70,7 @@ def main():
             directory / "runtime.json",
             {
                 "torch": torch.__version__,
-                "cuda": torch.version.cuda,
+                "cuda": torch_cuda_version,
                 "device": args.device,
                 "tf32": False,
                 "stage": args.stage,

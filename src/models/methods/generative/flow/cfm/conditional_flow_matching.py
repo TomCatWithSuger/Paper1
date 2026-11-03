@@ -1,9 +1,10 @@
-"""条件 Flow Matching 的线性路径、训练目标和 Euler 生成。"""
+"""模块说明：条件 Flow Matching 的线性路径、训练目标和 Euler 生成。"""
 
 import torch
 from torch import nn
 
 from src.losses.masked_regression import masked_mse
+from src.models.algorithms.flow import euler_integrate, linear_path
 from src.models.methods.base import VoiceMethod
 
 
@@ -22,8 +23,7 @@ class ConditionalFlowMatching(VoiceMethod):
     @staticmethod
     def interpolate(data, noise, times):
         """在线性条件概率路径上插值噪声与目标 Mel。"""
-        shape = (times.size(0),) + (1,) * (data.ndim - 1)
-        return (1.0 - times.view(shape)) * noise + times.view(shape) * data
+        return linear_path(data, noise, times)
 
     def compute_loss(
         self,
@@ -53,6 +53,8 @@ class ConditionalFlowMatching(VoiceMethod):
         path_samples = self.interpolate(target_mels, noise, times)
         target_velocity = target_mels - noise
         predicted_velocity = self(path_samples, times, condition, target_mask)
+        if predicted_velocity.shape != target_velocity.shape:
+            raise ValueError("速度场输出必须与目标形状一致")
         loss = masked_mse(predicted_velocity, target_velocity, target_mask)
         return loss, predicted_velocity, target_velocity, path_samples
 
@@ -69,10 +71,9 @@ class ConditionalFlowMatching(VoiceMethod):
             device=condition.device,
             dtype=condition.dtype,
         )
-        step_size = 1.0 / steps
-        for step in range(steps):
-            times = torch.full(
-                (samples.size(0),), step / steps, device=samples.device, dtype=samples.dtype
-            )
-            samples = samples + step_size * self(samples, times, condition, target_mask)
+        samples = euler_integrate(
+            lambda states, times: self(states, times, condition, target_mask),
+            samples,
+            steps,
+        )
         return self.apply_mask(samples, target_mask)

@@ -1,3 +1,5 @@
+"""模块说明：处理训练前置配置、任务异常清理和优化指标提取。"""
+
 import warnings
 from importlib import import_module
 from importlib.util import find_spec
