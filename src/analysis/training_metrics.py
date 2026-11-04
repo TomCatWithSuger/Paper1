@@ -1,4 +1,4 @@
-"""分析单次 Lightning 训练的指标并输出曲线和统计摘要。"""
+"""模块说明：分析单次 Lightning 训练的指标并输出曲线和统计摘要。"""
 
 import json
 from pathlib import Path

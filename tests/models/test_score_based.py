@@ -1,3 +1,5 @@
+"""模块说明：验证分数网络形状和噪声扰动训练步骤。"""
+
 import torch
 
 from src.models.methods.generative.diffusion.score_based import ScoreMatching

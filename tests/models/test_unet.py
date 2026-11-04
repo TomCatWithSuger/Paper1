@@ -1,3 +1,5 @@
+"""模块说明：验证一维 U-Net 重构形状及训练步骤。"""
+
 import torch
 
 from src.models.methods.representation.masked import MaskedReconstruction

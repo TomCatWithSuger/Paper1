@@ -1,4 +1,4 @@
-"""带时间或噪声条件的全连接张量预测网络。"""
+"""模块说明：带时间或噪声条件的全连接张量预测网络。"""
 
 from math import prod
 
@@ -24,7 +24,10 @@ class _DenseField(nn.Module):
         super().__init__()
         if not hidden_dims:
             raise ValueError("hidden_dims must contain at least one dimension")
-        embeddings = {"continuous": ContinuousTimeEmbedding, "discrete": SinusoidalTimeEmbedding}
+        embeddings = {
+            "continuous": ContinuousTimeEmbedding,
+            "discrete": SinusoidalTimeEmbedding,
+        }
         self.input_shape = tuple(input_shape)
         self.input_size = prod(self.input_shape)
         self.time_embedding = nn.Sequential(
@@ -57,7 +60,10 @@ class DenseNoiseField(_DenseField):
     """根据离散扩散时间步预测与输入同形状的噪声。"""
 
     def __init__(
-        self, input_shape=(1, 28, 28), hidden_dims=(512, 512, 256), time_embedding_dim=64
+        self,
+        input_shape=(1, 28, 28),
+        hidden_dims=(512, 512, 256),
+        time_embedding_dim=64,
     ):
         super().__init__(
             input_shape, hidden_dims, time_embedding_dim, "discrete", "noise_predictor"
@@ -71,7 +77,10 @@ class DenseScoreField(nn.Module):
     """根据连续噪声等级预测与输入同形状的分数场。"""
 
     def __init__(
-        self, input_shape=(1, 28, 28), hidden_dims=(512, 512, 256), noise_embedding_dim=64
+        self,
+        input_shape=(1, 28, 28),
+        hidden_dims=(512, 512, 256),
+        noise_embedding_dim=64,
     ):
         super().__init__()
         if not hidden_dims:

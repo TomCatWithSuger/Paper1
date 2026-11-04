@@ -1,4 +1,4 @@
-"""验证实验辅助工具的配置、日志、异常清理和多进程日志行为。"""
+"""模块说明：验证实验辅助工具的配置、日志、异常清理和多进程日志行为。"""
 
 # ====================
 # 1. Imports
@@ -16,14 +16,47 @@ from lightning.pytorch.loggers import CSVLogger
 from omegaconf import OmegaConf
 
 from src.utils import instantiators, logging_utils, pylogger, rich_utils, utils
+from tests.helpers import run_sh_command as shell_commands
 
 # ====================
 # 2. Tests
 # ====================
 
 
+def test_shell_command_skips_unavailable_dependency_without_importing(monkeypatch):
+    """未安装可选依赖时明确跳过，不尝试导入或安装。"""
+    importer = Mock()
+    monkeypatch.setattr(shell_commands, "_SH_AVAILABLE", False)
+    monkeypatch.setattr(shell_commands, "import_module", importer)
+    with pytest.raises(pytest.skip.Exception, match="sh"):
+        shell_commands.run_sh_command(["unused.py"])
+    importer.assert_not_called()
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_shell_command_preserves_arguments_and_reports_failure(monkeypatch, fails):
+    """懒加载保留命令参数，并把进程错误输出报告给 pytest。"""
+
+    class CommandError(Exception):
+        stderr = b"command failed"
+
+    runner = Mock(side_effect=CommandError() if fails else None)
+    importer = Mock(return_value=SimpleNamespace(python=runner, ErrorReturnCode=CommandError))
+    monkeypatch.setattr(shell_commands, "_SH_AVAILABLE", True)
+    monkeypatch.setattr(shell_commands, "import_module", importer)
+    command = ["example.py", "value=2"]
+    if fails:
+        with pytest.raises(pytest.fail.Exception, match="command failed"):
+            shell_commands.run_sh_command(command)
+    else:
+        shell_commands.run_sh_command(command)
+    importer.assert_called_once_with("sh")
+    runner.assert_called_once_with(command)
+
+
 @pytest.mark.parametrize(
-    "instantiate", [instantiators.instantiate_callbacks, instantiators.instantiate_loggers]
+    "instantiate",
+    [instantiators.instantiate_callbacks, instantiators.instantiate_loggers],
 )
 def test_instantiation_empty_and_invalid_configs(instantiate):
     """空配置返回空列表，非配置字典明确报错。"""
@@ -86,7 +119,11 @@ def test_log_hyperparameters_counts_frozen_and_trainable_parameters():
         }
     )
     logging_utils.log_hyperparameters(
-        {"cfg": cfg, "model": model, "trainer": SimpleNamespace(logger=True, loggers=loggers)}
+        {
+            "cfg": cfg,
+            "model": model,
+            "trainer": SimpleNamespace(logger=True, loggers=loggers),
+        }
     )
     for logger in loggers:
         logger.log_hyperparams.assert_called_once()
@@ -130,7 +167,13 @@ def test_extras_dispatches_only_enabled_options(monkeypatch):
     enforce.assert_not_called()
     print_tree.assert_not_called()
     cfg = OmegaConf.create(
-        {"extras": {"ignore_warnings": True, "enforce_tags": True, "print_config": True}}
+        {
+            "extras": {
+                "ignore_warnings": True,
+                "enforce_tags": True,
+                "print_config": True,
+            }
+        }
     )
     with warnings.catch_warnings():
         utils.extras(cfg)

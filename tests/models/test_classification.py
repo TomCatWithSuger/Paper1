@@ -1,4 +1,4 @@
-"""通用分类 Lightning Module 测试。"""
+"""模块说明：通用分类 Lightning Module 测试。"""
 
 from functools import partial
 

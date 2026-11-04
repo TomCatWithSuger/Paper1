@@ -1,3 +1,5 @@
+"""模块说明：验证 MNIST、ATCOSIM、VCTK 数据划分、缓存特征及批次契约。"""
+
 from pathlib import Path
 
 import pytest
@@ -9,7 +11,43 @@ from src.data.components.vctk_splits import (
     UnseenSpeakerSentenceSplit,
 )
 from src.data.mnist_datamodule import MNISTDataModule
+from src.data.synthetic_datamodule import SyntheticDataModule
 from src.data.vctk_datamodule import VCTKDataModule
+
+
+def test_synthetic_batches_are_repeatable_and_preserve_global_rng() -> None:
+    """合成批次不访问外部数据，不消耗全局随机状态。"""
+    state = torch.random.get_rng_state().clone()
+    module = SyntheticDataModule(num_samples=(16, 8, 8), batch_size=4)
+    module.setup("fit")
+    first = next(iter(module.train_dataloader()))
+    assert first[0].shape == (4, 1, 8, 8)
+    assert first[1].shape == (4,)
+    assert first[0].dtype == torch.float32 and first[1].dtype == torch.long
+    assert torch.equal(state, torch.random.get_rng_state())
+    repeated = SyntheticDataModule(num_samples=(16, 8, 8), batch_size=4)
+    torch.testing.assert_close(first[0], next(iter(repeated.train_dataloader()))[0])
+    validation = next(iter(module.val_dataloader()))[0]
+    testing = next(iter(module.test_dataloader()))[0]
+    assert not torch.equal(validation, testing)
+    torch.testing.assert_close(testing, next(iter(module.predict_dataloader()))[0])
+    module.setup("test")
+    torch.testing.assert_close(validation, next(iter(module.val_dataloader()))[0])
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"batch_size": 0},
+        {"input_shape": [0]},
+        {"num_samples": [1, 2]},
+        {"num_samples": [1, -1, 2]},
+    ],
+)
+def test_synthetic_rejects_invalid_dimensions_and_counts(options) -> None:
+    """在创建批次之前拒绝无效配置。"""
+    with pytest.raises(ValueError):
+        SyntheticDataModule(**options)
 
 
 def test_vctk_evaluation_interleaving_preserves_samples(vctk_data_dir: Path) -> None:
@@ -24,6 +62,7 @@ def test_vctk_evaluation_interleaving_preserves_samples(vctk_data_dir: Path) -> 
     interleaved = VCTKDataModule(**options, interleave_evaluation_speakers=True)
     original.setup("test")
     interleaved.setup("test")
+    assert original.data_test is not None and interleaved.data_test is not None
     before = [sample.utterance_id for sample in original.data_test.samples]
     after = [sample.utterance_id for sample in interleaved.data_test.samples]
     assert sorted(before) == sorted(after)
@@ -33,6 +72,7 @@ def test_vctk_evaluation_interleaving_preserves_samples(vctk_data_dir: Path) -> 
     )
     repeated = VCTKDataModule(**options, interleave_evaluation_speakers=True)
     repeated.setup("test")
+    assert repeated.data_test is not None
     assert after == [sample.utterance_id for sample in repeated.data_test.samples]
 
 

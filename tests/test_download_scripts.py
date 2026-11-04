@@ -1,3 +1,5 @@
+"""模块说明：使用本地合成归档验证下载脚本路径、安装和解包安全性。"""
+
 import sys
 from pathlib import Path
 from zipfile import ZipFile

@@ -1,3 +1,8 @@
+"""模块说明：验证实验配置组合、Hydra 多运行和超参数搜索入口。"""
+
+import os
+import subprocess  # nosec B404 - 仅执行当前 Python 与项目内训练入口。
+import sys
 from pathlib import Path
 
 import pytest
@@ -58,18 +63,17 @@ def test_hydra_sweep(tmp_path: Path) -> None:
     run_sh_command(command)
 
 
-@RunIf(sh=True)
 @pytest.mark.slow
 def test_hydra_sweep_ddp_sim(tmp_path: Path) -> None:
-    """使用模拟 DDP 和三个学习率运行 Hydra sweep。
+    """用三个学习率逐轮执行双进程 CPU 训练及测试，并限制子进程线程数。
 
     :param tmp_path: 保存模拟分布式 sweep 输出的临时目录。
-    :return: 无返回值；任一训练任务失败时测试直接失败。
+    :return: 无返回值；任一子进程失败、超时或未完成测试时失败。
     """
     command = [
         startfile,
         "-m",
-        "hydra.sweep.dir=" + str(tmp_path),
+        "hydra.sweep.dir=" + tmp_path.as_posix(),
         "trainer=ddp_sim",
         "trainer.max_epochs=3",
         "+trainer.limit_train_batches=0.01",
@@ -77,7 +81,27 @@ def test_hydra_sweep_ddp_sim(tmp_path: Path) -> None:
         "+trainer.limit_test_batches=0.1",
         "model.optimizer.lr=0.005,0.01,0.02",
     ] + overrides
-    run_sh_command(command)
+    # 在导入 Torch 前传入限制；Hydra 与每次 spawn 的工作进程共同继承。
+    environment = {
+        **os.environ,
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "OPENBLAS_NUM_THREADS": "1",
+        "PYTHONIOENCODING": "utf-8",
+    }
+    result = subprocess.run(  # nosec B603 - 使用参数列表，不经过 shell。
+        [sys.executable, *command],
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=300,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + "\n" + result.stderr
+    assert result.stdout.count("Starting testing!") == 3, result.stdout
+    for index in range(3):
+        assert (tmp_path / str(index) / "checkpoints/last.ckpt").is_file()
 
 
 @RunIf(sh=True)

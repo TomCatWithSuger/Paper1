@@ -1,4 +1,4 @@
-"""加载本地声码器、语音识别与说话人评分模型。"""
+"""模块说明：加载本地声码器、语音识别与说话人评分模型。"""
 
 # ====================
 # 1. Imports
@@ -46,12 +46,6 @@ def _load_vocos(config_path: Path, weights_path: Path) -> Any:
     return model
 
 
-# ====================
-# 2. Definitions
-# 常量 / 配置 / 类型
-# ====================
-
-
 class _AsrScorer:
     """优先使用本地 Whisper；不可用时提示并跳过 WER/CER。"""
 
@@ -62,7 +56,8 @@ class _AsrScorer:
         model_dir = model_dir.expanduser().resolve()
         if not model_dir.is_dir():
             logging.getLogger(__name__).warning(
-                "Whisper 本地模型目录不存在: %s；跳过 WER/CER，不会下载模型。", model_dir
+                "Whisper 本地模型目录不存在: %s；跳过 WER/CER，不会下载模型。",
+                model_dir,
             )
             return
 
@@ -103,7 +98,10 @@ class _AsrScorer:
         input_features = inputs.input_features.to(self.device)
         try:
             generated = self.model.generate(
-                input_features, language="english", task="transcribe", max_new_tokens=256
+                input_features,
+                language="english",
+                task="transcribe",
+                max_new_tokens=256,
             )
         except TypeError:
             decoder_ids = self.processor.get_decoder_prompt_ids(
@@ -159,7 +157,10 @@ class _SpeakerScorer:
         return vector
 
     def similarity(
-        self, waveform: torch.Tensor, reference: torch.Tensor, cache_key: str | None = None
+        self,
+        waveform: torch.Tensor,
+        reference: torch.Tensor,
+        cache_key: str | None = None,
     ) -> float:
         """计算生成波形与参考向量的余弦相似度。"""
         vector = self.embedding(waveform, cache_key)

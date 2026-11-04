@@ -1,4 +1,4 @@
-"""下载并校验条件 Flow Matching 使用的 MeanVC 预训练文件。"""
+"""模块说明：下载并校验条件 Flow Matching 使用的 MeanVC 预训练文件。"""
 
 import argparse
 import hashlib

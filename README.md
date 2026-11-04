@@ -15,89 +15,30 @@
 
 Tom 的语音lab
 
+研究进展见[阶段总结与下一步决策](docs/research/%E7%A0%94%E7%A9%B6%E9%98%B6%E6%AE%B5%E6%80%BB%E7%BB%93%E4%B8%8E%E4%B8%8B%E4%B8%80%E6%AD%A5%E5%86%B3%E7%AD%96_20261026.md)，全部说明见[文档导航](docs/README.md)。
+分析实现按 [P1 / P2 / 端点 pilot](src/analysis/README.md) 分包，命令行入口见 [scripts/analysis](scripts/analysis/README.md)，已有实验产物见[结果导航](analysis_results/README.md)。
+
 ## Installation
 
-项目使用 Python 3.10，支持 Conda 和 uv。必需使用 uv 并且生成对应的 uv.lock 文件，才能保证 github Actions 上的测试通过。
+项目使用 Python 3.10，本机与 GitHub Actions 均使用 Conda，不需要 uv。本机复用已有的 `Lightning-Template` 环境，不创建新虚拟环境。
 
 ### Conda
 
 ```bash
-# clone project
-git clone https://github.com/YourGithubName/your-repo-name
-cd your-repo-name
-
-# install conda-lock
-conda install -c conda-forge conda-lock
-
-# create environment from the locked dependencies
-conda-lock install -n Lightning-Template conda-lock.yml
-
-# activate environment
 conda activate Lightning-Template
 ```
 
-修改 `environment.yaml` 中的依赖后，可以重新生成跨平台锁文件：
+依赖来源为 [environment.yaml](environment.yaml)，质量工具固定版本见 [requirements-quality.txt](requirements-quality.txt)。CI 在干净 runner 上根据环境声明创建环境；本机不自动安装或替换依赖。
+
+修改环境声明后，需要用已安装的 `conda-lock` 重新求解跨平台锁文件：
 
 ```bash
 conda-lock -f environment.yaml -p linux-64 -p win-64 -p osx-64
 ```
 
-### uv
+当前 [conda-lock.yml](conda-lock.yml) 尚未与新增质量依赖同步，不能当作新环境声明的复现结果。锁文件是求解器生成产物，不手工修改版本、URL 或校验值。
 
-```bash
-# clone project
-git clone https://github.com/YourGithubName/your-repo-name
-cd your-repo-name
-
-# create the virtual environment and install dependencies
-uv sync
-
-# activate environment (Linux/macOS)
-source .venv/bin/activate
-
-# activate environment (Windows PowerShell)
-.venv\Scripts\Activate.ps1
-```
-
-### Note
-
-**`uv lock`只更新锁文件，不安装软件包**。
-
-虽然当前终端已激活 Conda 环境，但运行：
-
-```bash
-uv lock
-```
-
-只会：
-
-1. 读取 `pyproject.toml`；
-2. 解析依赖；
-3. 把 `soundfile`、`cffi`、`pycparser`写入 `uv.lock`；
-4. **不会修改当前 Conda 环境**。
-
-输出中的：
-
-```text
-Added soundfile v0.13.1
-```
-
-表示“添加到 `uv.lock`”，不是“安装到 `Lightning-Template`”。
-
-两套环境的关系
-
-| 用途           | 配置               | 锁文件           | 安装/同步方式                  |
-| -------------- | ------------------ | ---------------- | ------------------------------ |
-| 本机 Conda     | `environment.yaml` | `conda-lock.yml` | `conda install` / `conda-lock` |
-| GitHub Actions | `pyproject.toml`   | `uv.lock`        | `uv sync --locked`             |
-
-理论上可以使用：
-
-```bash
-uv sync --active
-```
-
-让 uv 向当前 Conda 环境安装依赖，但这会混用 Conda 和 uv 的依赖管理，甚至可能同步或替换现有包。这个项目本机既然明确使用 Conda，建议本机依赖通过 `conda install`管理；`uv lock`只用于维护 GitHub Actions 的锁文件。
+下载求解元数据、安装依赖和初始化 pre-commit hook 环境前，均须先获得用户授权。完整 pre-commit 首次运行可能下载工具；普通测试也可能下载 MNIST 等数据。
 
 ## How to run
 
@@ -123,12 +64,6 @@ You can override any parameter from command line like this
 python src/train.py trainer.max_epochs=20 data.batch_size=64
 ```
 
-使用 uv 时，也可以不手动激活环境，直接运行：
-
-```bash
-uv run python src/train.py trainer=cpu
-```
-
 ## Tests and code quality
 
 项目已经配置以下自动化检查：
@@ -143,6 +78,7 @@ uv run python src/train.py trainer=cpu
 
 ```bash
 conda activate Lightning-Template
+python scripts/quality.py all
 pytest
 pre-commit run --all-files
 make lint-changed
@@ -156,7 +92,8 @@ git status --short
 | `pre-commit run --all-files`    | 对 Git 跟踪的文件执行全量代码质量检查；格式化修改后需重新运行，直到通过。                                                                                  |
 | `make lint-changed`             | 检查相对 `HEAD` 的已暂存、未暂存修改及未跟踪新文件，提前发现仅检查改动文件时的问题。                                                                       |
 | `make test-cov`                 | 运行完整测试并输出缺失覆盖行；测试须通过，`src` 总覆盖率须达到 **80%**。等价于 `pytest --cov src --cov-report=term-missing`，无需再重复运行普通 `pytest`。 |
-| VS Code 的“问题”面板            | 检查本次改动文件的 Pylance 类型错误，例如可空值访问和参数类型不匹配；pytest 和当前 pre-commit 不替代此检查。                                               |
+| `python scripts/quality.py all` | 全仓检查架构依赖、500 物理行、Pyright 类型、文件模板及门禁自测；与 CI 使用相同入口。                                                                       |
+| VS Code 的“问题”面板            | 定位当前编辑文件的 Pylance 类型错误；全仓类型检查由统一门禁执行。                                                                                          |
 | `git diff --check`              | 检查未暂存修改的空白错误；暂存后还需运行 `git diff --cached --check`。                                                                                     |
 | `git status --short` 和差异审查 | 确认只提交预期文件，没有误加入数据、权重、日志或敏感信息；检查 `git diff` 及暂存后的 `git diff --cached`。                                                 |
 
@@ -174,8 +111,8 @@ make lint-pr
 
 ### 依赖与 CI
 
-- 修改依赖时，同步维护实际使用的 Conda 配置及 CI 使用的 [pyproject.toml](pyproject.toml) 和 uv 锁文件；CI 使用 `uv sync --locked`，依赖声明与锁文件必须一致。更新锁文件或同步环境可能访问网络，应先确认允许下载，不要为本机检查额外创建环境。
-- 已使用 uv 环境时，可运行 `uv run pytest --cov src --cov-report=term-missing`、`uv run pre-commit run --all-files`。本机按项目约定使用现有 Conda 环境即可。
+- 修改依赖时，同步维护 Conda 环境声明、质量工具版本及包元数据；跨平台锁文件须由求解器重新生成并验证。CI 当前使用 `environment.yaml` 求解环境，不使用旧 uv 锁文件。
+- 更新锁文件、安装依赖或初始化 hook 环境可能访问网络，应先获得下载授权。本机始终使用现有 Conda 环境，不为检查另建环境。
 - 本机 Linux 检查通过不能保证 Windows/macOS 兼容；推送后仍需确认 GitHub Actions 的跨平台测试、覆盖率和代码质量任务全部通过。
 
 ### Docstring 原则

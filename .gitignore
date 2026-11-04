@@ -154,5 +154,6 @@ configs/local/default.yaml
 # Aim logging
 .aim
 
-analysis_results/
+/analysis_results/*
+!/analysis_results/README.md
 docs/papers/

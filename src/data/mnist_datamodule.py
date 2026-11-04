@@ -1,3 +1,5 @@
+"""模块说明：提供 MNIST 数据准备、划分和 Lightning 数据加载器。"""
+
 from typing import Any, Dict, Optional, Tuple
 
 import torch

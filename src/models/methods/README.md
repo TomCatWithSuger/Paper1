@@ -35,6 +35,10 @@ methods/
 
 Method 不得依赖 Lightning。复杂的 Sampler、Scheduler 或 Solver 可以拆成独立组件，由 Method 组织调用，不要求全部实现在 Method 内部。Method 与 Module 也不要求目录一一对应。
 
+当前条件与无条件 Flow Matching 共用 `src/models/algorithms/flow.py` 的线性路径及可微 Euler 核心。Method 保留噪声采样、条件绑定、Mask 和对外生成接口，不把随机性与模型模式隐藏在数值工具中。
+
+Method 可以注册多个 Network、条件组件和额外可训练参数。GAN 通过 `optimization_roles()` 暴露经校验的参数组，通过 `optimization_phases` 声明 D/G 顺序，通过 `compute_phase_loss()` 定义每阶段目标与样本梯度边界；不依赖 Lightning 执行反传。其他算法不要求强制实现 GAN 的阶段接口。
+
 ## 分类原则
 
 Method 描述“学习什么、目标如何构造、如何生成”，因此遵循以下原则：

@@ -1,4 +1,4 @@
-"""变分自动编码器潜变量生成方法。"""
+"""模块说明：变分自动编码器潜变量生成方法。"""
 
 import torch
 import torch.nn.functional as F

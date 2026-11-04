@@ -1,3 +1,5 @@
+"""模块说明：提供 ATCOSIM 数据集读取、批次整理和 Lightning 数据生命周期。"""
+
 import wave
 from array import array
 from pathlib import Path

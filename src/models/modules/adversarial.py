@@ -1,4 +1,4 @@
-"""对抗生成的 Lightning 训练入口。"""
+"""模块说明：对抗生成的 Lightning 训练入口。"""
 
 import torch
 from lightning import LightningModule
@@ -13,7 +13,8 @@ class GANLitModule(LightningModule):
     def __init__(self, method, generator_optimizer, discriminator_optimizer, compile=False):
         super().__init__()
         self.save_hyperparameters(
-            logger=False, ignore=["method", "generator_optimizer", "discriminator_optimizer"]
+            logger=False,
+            ignore=["method", "generator_optimizer", "discriminator_optimizer"],
         )
         self.method = method
         self.generator_optimizer_factory = generator_optimizer
@@ -61,20 +62,24 @@ class GANLitModule(LightningModule):
         if not isinstance(optimizers, list):
             raise RuntimeError("GAN training requires two optimizers")
         generator_optimizer, discriminator_optimizer = optimizers
-        self.toggle_optimizer(discriminator_optimizer)
-        discriminator_optimizer.zero_grad()
-        generated = self.method.generate(real.size(0), real.device)
-        discriminator_loss = self.discriminator_loss(real, generated.detach())
-        self.manual_backward(discriminator_loss)
-        discriminator_optimizer.step()
-        self.untoggle_optimizer(discriminator_optimizer)
-        self.toggle_optimizer(generator_optimizer)
-        generator_optimizer.zero_grad()
-        generated = self.method.generate(real.size(0), real.device)
-        generator_loss = self.generator_loss(generated)
-        self.manual_backward(generator_loss)
-        generator_optimizer.step()
-        self.untoggle_optimizer(generator_optimizer)
+        by_role = {
+            "generator": generator_optimizer,
+            "discriminator": discriminator_optimizer,
+        }
+        losses = {}
+        for role in self.method.optimization_phases:
+            optimizer = by_role[role]
+            self.toggle_optimizer(optimizer)
+            try:
+                optimizer.zero_grad()
+                loss = self.method.compute_phase_loss(role, real)
+                self.manual_backward(loss)
+                optimizer.step()
+            finally:
+                self.untoggle_optimizer(optimizer)
+            losses[role] = loss
+        generator_loss = losses["generator"]
+        discriminator_loss = losses["discriminator"]
         self._log_losses("train", generator_loss, discriminator_loss)
         return (generator_loss + discriminator_loss).detach()
 
@@ -103,14 +108,15 @@ class GANLitModule(LightningModule):
             self.method.network = torch.compile(self.method.network)
 
     def configure_optimizers(self):
+        roles = self.method.optimization_roles()
         return [
-            self.generator_optimizer_factory(params=self.method.network.generator.parameters()),
-            self.discriminator_optimizer_factory(
-                params=self.method.network.discriminator.parameters()
-            ),
+            self.generator_optimizer_factory(params=roles["generator"]),
+            self.discriminator_optimizer_factory(params=roles["discriminator"]),
         ]
 
     def load_state_dict(self, state_dict, strict=True, assign=False):
         return super().load_state_dict(
-            _map_legacy_state_dict(self.method, state_dict), strict=strict, assign=assign
+            _map_legacy_state_dict(self.method, state_dict),
+            strict=strict,
+            assign=assign,
         )

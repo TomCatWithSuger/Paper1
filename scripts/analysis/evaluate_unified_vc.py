@@ -1,4 +1,4 @@
-"""运行固定 100 组 source/reference 的统一 VC 评估。"""
+"""模块说明：运行固定 100 组 source/reference 的统一 VC 评估。"""
 
 import argparse
 import sys

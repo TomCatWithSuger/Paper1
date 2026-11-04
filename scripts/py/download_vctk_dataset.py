@@ -1,4 +1,4 @@
-"""下载、校验并整理 VCTK 0.92 数据集。"""
+"""模块说明：下载、校验并整理 VCTK 0.92 数据集。"""
 
 import argparse
 import hashlib

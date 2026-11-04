@@ -1,4 +1,4 @@
-"""带批归一化的全连接分类网络。"""
+"""模块说明：带批归一化的全连接分类网络。"""
 
 from torch import nn
 
@@ -7,7 +7,12 @@ class SimpleDenseNet(nn.Module):
     """将固定尺寸输入映射为多分类 logits。"""
 
     def __init__(
-        self, input_size=784, lin1_size=256, lin2_size=256, lin3_size=256, output_size=10
+        self,
+        input_size=784,
+        lin1_size=256,
+        lin2_size=256,
+        lin3_size=256,
+        output_size=10,
     ):
         super().__init__()
         self.model = nn.Sequential(

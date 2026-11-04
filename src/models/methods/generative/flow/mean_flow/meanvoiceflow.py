@@ -1,13 +1,12 @@
-"""MeanVoiceFlow 的伪源先验、JVP 与零输入重构。"""
+"""模块说明：MeanVoiceFlow 的伪源先验、JVP 与零输入重构。"""
 
 import warnings
-from collections.abc import Callable
-from typing import cast
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 
+from src.models.algorithms.autodiff import tensor_jvp
 from src.models.methods.base import VoiceMethod, reject_inference_mode_jvp
 from src.models.methods.generative.flow.mean_flow.conditional_mean_flow import (
     ConditionalMeanFlow,
@@ -125,10 +124,18 @@ class MeanVoiceFlow(VoiceMethod):
         batch_size = noise.size(0)
         pure_noise_times = torch.ones(batch_size, device=noise.device, dtype=noise.dtype)
         if batch_size < 2 or self.conditional_input_probability == 0.0:
-            return noise, pure_noise_times, torch.zeros_like(pure_noise_times, dtype=torch.bool)
+            return (
+                noise,
+                pure_noise_times,
+                torch.zeros_like(pure_noise_times, dtype=torch.bool),
+            )
         conditional_count = int(batch_size * self.conditional_input_probability)
         if conditional_count == 0:
-            return noise, pure_noise_times, torch.zeros_like(pure_noise_times, dtype=torch.bool)
+            return (
+                noise,
+                pure_noise_times,
+                torch.zeros_like(pure_noise_times, dtype=torch.bool),
+            )
         shuffled_speakers, valid_pairs = self._shuffle_speaker_features(
             speaker_features, speaker_ids, generator
         )
@@ -211,7 +218,10 @@ class MeanVoiceFlow(VoiceMethod):
         )
         prediction_second_moment = (
             F.avg_pool2d(
-                prediction_image.square() * valid_image, kernel_size=3, stride=1, padding=1
+                prediction_image.square() * valid_image,
+                kernel_size=3,
+                stride=1,
+                padding=1,
             )
             / safe_weight
         )
@@ -221,7 +231,10 @@ class MeanVoiceFlow(VoiceMethod):
         )
         cross_moment = (
             F.avg_pool2d(
-                prediction_image * target_image * valid_image, kernel_size=3, stride=1, padding=1
+                prediction_image * target_image * valid_image,
+                kernel_size=3,
+                stride=1,
+                padding=1,
             )
             / safe_weight
         )
@@ -291,11 +304,11 @@ class MeanVoiceFlow(VoiceMethod):
             )
 
         predicted_velocity = average_velocity(path_samples, end_times, start_times)
-        with torch.no_grad(), torch.autocast(device_type=target_mels.device.type, enabled=False):
-            jvp_fn = cast(
-                Callable[..., tuple[torch.Tensor, torch.Tensor]], getattr(torch.func, "jvp")
-            )
-            _, total_derivative = jvp_fn(
+        with (
+            torch.no_grad(),
+            torch.autocast(device_type=target_mels.device.type, enabled=False),
+        ):
+            _, total_derivative = tensor_jvp(
                 average_velocity,
                 (path_samples, end_times, start_times),
                 (
@@ -362,6 +375,11 @@ class MeanVoiceFlow(VoiceMethod):
         end_times = torch.ones_like(diffusion_times)
         start_times = torch.zeros_like(diffusion_times)
         velocity = self(
-            diffused_source, start_times, end_times, diffusion_times, condition, target_mask
+            diffused_source,
+            start_times,
+            end_times,
+            diffusion_times,
+            condition,
+            target_mask,
         )
         return self.apply_mask(diffused_source - velocity, target_mask)

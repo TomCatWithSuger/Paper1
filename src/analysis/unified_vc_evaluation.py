@@ -1,4 +1,4 @@
-"""在固定 VCTK 清单上统一评估 B1、B2、B3 的 Mel 质量与推理效率。"""
+"""模块说明：在固定 VCTK 清单上统一评估 B1、B2、B3 的 Mel 质量与推理效率。"""
 
 # ====================
 # 1. Imports
@@ -250,11 +250,18 @@ def _execute(
         unregistered = {str(record["experiment_id"]) for record in records} - set(registered)
         if unregistered:
             raise ValueError(f"评估账本缺少实验身份，拒绝续跑: {', '.join(sorted(unregistered))}")
-        current_identity["experiments"] = {**registered, **current_identity["experiments"]}
+        current_identity["experiments"] = {
+            **registered,
+            **current_identity["experiments"],
+        }
         _write_identity(identity_path, current_identity)
 
     completed = {
-        (str(record["experiment_id"]), str(record["source_id"]), str(record["reference_id"]))
+        (
+            str(record["experiment_id"]),
+            str(record["source_id"]),
+            str(record["reference_id"]),
+        )
         for record in records
     }
     for spec in specs:

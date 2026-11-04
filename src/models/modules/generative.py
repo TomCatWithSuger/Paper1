@@ -1,4 +1,4 @@
-"""扩散、流匹配和 DiT 的 Lightning 训练入口。"""
+"""模块说明：扩散、流匹配和 DiT 的 Lightning 训练入口。"""
 
 from collections import OrderedDict
 from typing import Any, cast
@@ -116,7 +116,9 @@ class GenerativeModule(LightningModule):
 
     def load_state_dict(self, state_dict, strict=True, assign=False):
         return super().load_state_dict(
-            _map_legacy_state_dict(self.method, state_dict), strict=strict, assign=assign
+            _map_legacy_state_dict(self.method, state_dict),
+            strict=strict,
+            assign=assign,
         )
 
 

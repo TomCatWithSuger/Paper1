@@ -1,4 +1,4 @@
-"""带跳跃连接的一维波形重构网络。"""
+"""模块说明：带跳跃连接的一维波形重构网络。"""
 
 import torch
 import torch.nn.functional as F

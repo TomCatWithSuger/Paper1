@@ -1,4 +1,4 @@
-"""离线提取 VCTK 的 MeanVC 内容特征和说话人向量。"""
+"""模块说明：离线提取 VCTK 的 MeanVC 内容特征和说话人向量。"""
 
 import argparse
 import csv
@@ -170,7 +170,8 @@ def main() -> None:
         "--output-dir",
         type=Path,
         default=_configured_path(
-            "MEANVC_FEATURE_CACHE_DIR", PROJECT_ROOT / "data" / "meanvc_features" / "vctk"
+            "MEANVC_FEATURE_CACHE_DIR",
+            PROJECT_ROOT / "data" / "meanvc_features" / "vctk",
         ),
     )
     parser.add_argument(

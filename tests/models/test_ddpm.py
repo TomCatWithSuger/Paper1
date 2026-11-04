@@ -1,3 +1,5 @@
+"""模块说明：验证全连接扩散网络形状及去噪训练步骤。"""
+
 import torch
 
 from src.models.methods.generative.diffusion.ddpm import DDPM

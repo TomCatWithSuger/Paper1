@@ -1,4 +1,4 @@
-"""分类训练方法。"""
+"""模块说明：分类训练方法。"""
 
 import torch
 from torch import nn

@@ -1,4 +1,4 @@
-"""自动编码器和波形重构的 Lightning 训练入口。"""
+"""模块说明：自动编码器和波形重构的 Lightning 训练入口。"""
 
 from torchmetrics import MeanMetric
 

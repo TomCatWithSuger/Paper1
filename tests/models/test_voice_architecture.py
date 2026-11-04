@@ -1,4 +1,4 @@
-"""语音四层架构、配置及 Lightning 生命周期回归。"""
+"""模块说明：语音四层架构、配置及 Lightning 生命周期回归。"""
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -121,6 +121,36 @@ def test_independent_time_embeddings_sum(fields):
         network(states, {"wrong": torch.rand(2)}, condition)
 
 
+@pytest.mark.parametrize(
+    "name", ["conditional_flow_matching", "conditional_flow_matching_transformer"]
+)
+def test_cfm_network_replacement_without_lightning(name):
+    method = instantiate(small_config(name).method)
+    values = batch()
+    inputs = dict(
+        content_features=values["content_features"],
+        content_lengths=values["content_feature_lengths"],
+        speaker_features=values["speaker_features"],
+        target_mask=values["mel_attention_mask"],
+    )
+    assert not isinstance(method, LightningModule)
+    loss, prediction, target, _ = method.compute_loss(
+        target_mels=values["mel_spectrograms"], **inputs
+    )
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert prediction.shape == target.shape == values["mel_spectrograms"].shape
+    for component in (method.network, method.condition_encoder):
+        gradients = [
+            parameter.grad for parameter in component.parameters() if parameter.grad is not None
+        ]
+        assert gradients and all(torch.isfinite(gradient).all() for gradient in gradients)
+    generated = method.generate(**inputs)
+    assert generated.shape == target.shape
+    assert torch.isfinite(generated).all()
+    assert torch.count_nonzero(generated[1, :, 10:]) == 0
+
+
 @pytest.mark.parametrize("fields", [(), ("interval",), ("time", "time"), ("time", "unknown")])
 def test_invalid_time_fields(fields):
     with pytest.raises(ValueError):
@@ -129,7 +159,11 @@ def test_invalid_time_fields(fields):
 
 @pytest.mark.parametrize(
     "experiment",
-    ["conditional_flow_matching_vctk", "conditional_mean_flow_vctk", "meanvoiceflow_vctk"],
+    [
+        "conditional_flow_matching_vctk",
+        "conditional_mean_flow_vctk",
+        "meanvoiceflow_vctk",
+    ],
 )
 def test_experiment_nested_overrides(experiment):
     with initialize_config_dir(version_base="1.3", config_dir=str(ROOT / "configs")):
@@ -241,6 +275,7 @@ def test_meanvoiceflow_ssim_margin_padding_and_empty_masks():
         loss = method._masked_ssim_loss(prediction, target, mask)
         torch.testing.assert_close(loss, torch.tensor(0.3))
         loss.backward()
+        assert prediction.grad is not None
         assert torch.count_nonzero(prediction.grad) == 0
 
     target = torch.randn(2, 8, 13)
@@ -253,9 +288,11 @@ def test_meanvoiceflow_ssim_margin_padding_and_empty_masks():
     )
     torch.testing.assert_close(actual, padded)
     actual.backward()
+    assert prediction.grad is not None
     assert torch.isfinite(prediction.grad).all()
     assert torch.count_nonzero(prediction.grad) > 0
     empty_loss = method._masked_ssim_loss(prediction, target, torch.zeros_like(mask))
+    assert isinstance(empty_loss, torch.Tensor)
     assert empty_loss == 0
     empty_loss.backward()
 
@@ -295,6 +332,7 @@ def test_meanvoiceflow_adaptive_loss_formula_and_gradient():
         / prediction.size(0)
     )
     torch.testing.assert_close(prediction.grad, expected_gradient)
+    assert prediction.grad is not None
     assert torch.count_nonzero(prediction.grad[1, :, 9:]) == 0
 
 
@@ -336,7 +374,11 @@ def test_meanvoiceflow_analytic_jvp_target_and_stop_gradient(monkeypatch):
         )
 
     def pure_noise_prior(noise, *args):
-        return noise, torch.ones(noise.size(0)), torch.zeros(noise.size(0), dtype=torch.bool)
+        return (
+            noise,
+            torch.ones(noise.size(0)),
+            torch.zeros(noise.size(0), dtype=torch.bool),
+        )
 
     starts = torch.tensor([0.1, 0.6])
     ends = torch.tensor([0.8, 0.6])

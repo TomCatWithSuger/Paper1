@@ -1,3 +1,5 @@
+"""模块说明：按 Hydra 配置实例化模型与数据模块并执行检查点评估。"""
+
 from typing import Any, Dict, List, Tuple
 
 import hydra

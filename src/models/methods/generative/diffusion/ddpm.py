@@ -1,4 +1,4 @@
-"""去噪扩散概率模型方法。"""
+"""模块说明：去噪扩散概率模型方法。"""
 
 import torch
 import torch.nn.functional as F

@@ -1,4 +1,4 @@
-"""使用 MeanVC 预训练模型提取内容条件和说话人条件。"""
+"""模块说明：使用 MeanVC 预训练模型提取内容条件和说话人条件。"""
 
 import importlib.util
 from collections.abc import Callable
@@ -9,6 +9,34 @@ from typing import cast
 import torch
 import torch.nn.functional as F
 from torch import nn
+
+
+def _fuse_condition_with_mask(
+    fusion: nn.Sequential,
+    features: torch.Tensor,
+    target_mask: torch.Tensor,
+    mask_padding_in_normalization: bool,
+) -> torch.Tensor:
+    """只用有效帧统计归一化；旧配置和无 padding 输入保留原计算路径。"""
+    if not mask_padding_in_normalization or bool(target_mask.all()):
+        return fusion(features)
+    projected = fusion[0](features)
+    normalization = fusion[1]
+    if not isinstance(normalization, nn.GroupNorm) or normalization.num_groups != 1:
+        raise TypeError("条件融合要求单组 GroupNorm")
+    # 半精度输入使用 FP32 统计，与 GroupNorm 的累积精度保持一致。
+    work = projected.float() if projected.dtype in (torch.float16, torch.bfloat16) else projected
+    valid = target_mask.unsqueeze(1)
+    work = work.masked_fill(~valid, 0)
+    count = (valid.sum(dim=(1, 2), keepdim=True) * projected.size(1)).clamp_min(1)
+    mean = work.sum(dim=(1, 2), keepdim=True) / count
+    centered = (work - mean).masked_fill(~valid, 0)
+    variance = centered.square().sum(dim=(1, 2), keepdim=True) / count
+    normalized = (work - mean) * torch.rsqrt(variance + normalization.eps)
+    if normalization.affine:
+        normalized = normalized * normalization.weight.view(1, -1, 1)
+        normalized = normalized + normalization.bias.view(1, -1, 1)
+    return fusion[2](normalized.to(projected.dtype))
 
 
 def _resample_waveform(
@@ -323,12 +351,15 @@ class CachedConditionEncoder(nn.Module):
         content_dim: int = 256,
         speaker_dim: int = 256,
         output_dim: int = 128,
+        mask_padding_in_normalization: bool = False,
     ) -> None:
         super().__init__()
         if content_dim <= 0 or speaker_dim <= 0 or output_dim <= 0:
             raise ValueError("condition dimensions must be positive")
         self.content_dim = content_dim
         self.speaker_dim = speaker_dim
+        # 历史运行配置未包含该字段，默认保留旧模型的归一化语义。
+        self.mask_padding_in_normalization = mask_padding_in_normalization
         self.fusion = nn.Sequential(
             nn.Conv1d(content_dim + speaker_dim, output_dim, kernel_size=1),
             nn.GroupNorm(1, output_dim),
@@ -363,7 +394,12 @@ class CachedConditionEncoder(nn.Module):
             )
             aligned_content[index, :, :target_length] = aligned[0]
         expanded_speaker = speaker_features.unsqueeze(2).expand(-1, -1, target_frames)
-        condition = self.fusion(torch.cat((aligned_content, expanded_speaker), dim=1))
+        condition = _fuse_condition_with_mask(
+            self.fusion,
+            torch.cat((aligned_content, expanded_speaker), dim=1),
+            target_mask,
+            self.mask_padding_in_normalization,
+        )
         return condition * target_mask.unsqueeze(1).to(condition.dtype)
 
 
@@ -377,12 +413,14 @@ class ConditionEncoder(nn.Module):
         content_dim: int = 256,
         speaker_dim: int = 256,
         output_dim: int = 128,
+        mask_padding_in_normalization: bool = False,
     ) -> None:
         super().__init__()
         if content_dim <= 0 or speaker_dim <= 0 or output_dim <= 0:
             raise ValueError("condition dimensions must be positive")
         self.content_encoder = content_encoder
         self.speaker_encoder = speaker_encoder
+        self.mask_padding_in_normalization = mask_padding_in_normalization
         self.fusion = nn.Sequential(
             nn.Conv1d(content_dim + speaker_dim, output_dim, kernel_size=1),
             nn.GroupNorm(1, output_dim),
@@ -414,5 +452,10 @@ class ConditionEncoder(nn.Module):
             sample_rate,
         )
         expanded_speaker = speaker_features.unsqueeze(2).expand(-1, -1, target_frames)
-        condition = self.fusion(torch.cat((content_features, expanded_speaker), dim=1))
+        condition = _fuse_condition_with_mask(
+            self.fusion,
+            torch.cat((content_features, expanded_speaker), dim=1),
+            target_mask,
+            self.mask_padding_in_normalization,
+        )
         return condition * target_mask.unsqueeze(1).to(condition.dtype)

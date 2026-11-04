@@ -1,3 +1,5 @@
+"""模块说明：验证全连接自动编码器形状及重构训练步骤。"""
+
 import torch
 
 from src.models.methods.representation.autoencoder import Autoencoder

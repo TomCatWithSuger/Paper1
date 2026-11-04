@@ -1,4 +1,4 @@
-"""普通自动编码器表征学习方法。"""
+"""模块说明：普通自动编码器表征学习方法。"""
 
 import torch.nn.functional as F
 from torch import nn

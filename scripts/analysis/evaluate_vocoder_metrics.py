@@ -1,4 +1,4 @@
-"""Vocoder 波形域评估入口脚本。
+"""模块说明：Vocoder 波形域评估入口脚本。
 
 将统一评估生成的 Mel 经 Vocos 声码器合成为波形， 计算 WER/CER、说话人相似度、F0、能量与 RTF 等指标。
 """
@@ -30,7 +30,9 @@ def _parse_args() -> argparse.Namespace:
         "--vctk-root", type=Path, default=Path("/mnt/data2/home/tsx/project/data/VCTK")
     )
     parser.add_argument(
-        "--vocos-config", type=Path, default=PROJECT_ROOT / "pretrained" / "vocos" / "config.yaml"
+        "--vocos-config",
+        type=Path,
+        default=PROJECT_ROOT / "pretrained" / "vocos" / "config.yaml",
     )
     parser.add_argument(
         "--vocos-weights",
@@ -38,7 +40,9 @@ def _parse_args() -> argparse.Namespace:
         default=PROJECT_ROOT / "pretrained" / "vocos" / "pytorch_model.bin",
     )
     parser.add_argument(
-        "--asr-model-dir", type=Path, default=PROJECT_ROOT / "pretrained" / "whisper-small"
+        "--asr-model-dir",
+        type=Path,
+        default=PROJECT_ROOT / "pretrained" / "whisper-small",
     )
     parser.add_argument(
         "--speaker-source",

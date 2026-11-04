@@ -1,3 +1,5 @@
+"""模块说明：验证变分自动编码器形状及潜变量训练步骤。"""
+
 import torch
 
 from src.models.methods.generative.latent_variable.vae import VariationalAutoencoder

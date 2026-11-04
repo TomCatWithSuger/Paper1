@@ -85,7 +85,9 @@ Module 不应：
 - 显式切换优化器并执行两阶段更新。
 - 分别记录生成器和判别器损失。
 
-双网络结构和对抗损失属于 Network 与 Method；手动优化顺序属于 Module。
+双网络结构属于 Network，对抗目标、样本分离和算法要求的更新顺序属于 Method；Module 执行优化器切换、清梯度、反传和更新。当前通过 `optimization_roles()` 取得参数，通过 `optimization_phases` 与 `compute_phase_loss()` 执行 D/G 阶段，不访问具体 Network 的内部 G/D 参数。
+
+优化器列表保持 G/D 顺序，实际阶段保持 D/G 顺序，以兼容现有状态布局。角色参数必须无交集且覆盖 Method 的可训练参数。冻结参数不等于冻结 Buffer 或切换 train/eval；本实现保持原有 BatchNorm 和 Dropout 行为。当前不支持任意梯度累积、阶段频率或共享优化器参数，新增这些能力必须单独验证。
 
 ### `classification.py`
 

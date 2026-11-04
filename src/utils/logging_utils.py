@@ -1,3 +1,5 @@
+"""模块说明：将模型、数据和训练配置汇总到实验日志的超参数记录。"""
+
 from typing import Any, Dict
 
 from lightning_utilities.core.rank_zero import rank_zero_only

@@ -1,5 +1,8 @@
+"""模块说明：验证种子设置、训练设备、分布式入口和检查点继续训练。"""
+
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from hydra.core.hydra_config import HydraConfig
@@ -7,6 +10,22 @@ from omegaconf import DictConfig, open_dict
 
 from src.train import train
 from tests.helpers.run_if import RunIf
+
+
+@pytest.mark.parametrize("seed", [0, 42, None])
+def test_train_seed_without_loading_data(cfg_train: DictConfig, seed) -> None:
+    """零种子与非零种子均应生效；不启动数据准备或训练。"""
+    with open_dict(cfg_train):
+        cfg_train.seed = seed
+        cfg_train.train = False
+        cfg_train.test = False
+        cfg_train.logger = None
+    with patch("src.train.L.seed_everything") as seed_everything:
+        train(cfg_train)
+    if seed is None:
+        seed_everything.assert_not_called()
+    else:
+        seed_everything.assert_called_once_with(seed, workers=True)
 
 
 def test_train_fast_dev_run(cfg_train: DictConfig) -> None:
@@ -71,6 +90,7 @@ def test_train_ddp_sim(cfg_train: DictConfig, monkeypatch: pytest.MonkeyPatch) -
     """
     monkeypatch.setenv("OMP_NUM_THREADS", "1")
     monkeypatch.setenv("MKL_NUM_THREADS", "1")
+    monkeypatch.setenv("OPENBLAS_NUM_THREADS", "1")
 
     HydraConfig().set_config(cfg_train)
     with open_dict(cfg_train):

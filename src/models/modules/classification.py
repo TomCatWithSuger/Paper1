@@ -1,4 +1,4 @@
-"""多分类任务的 Lightning 训练入口。"""
+"""模块说明：多分类任务的 Lightning 训练入口。"""
 
 import torch
 from lightning import LightningModule
@@ -22,7 +22,11 @@ class ClassificationLitModule(LightningModule):
         self.scheduler_factory = scheduler
         self.compile_model = compile
         for stage in ("train", "val", "test"):
-            setattr(self, f"{stage}_acc", Accuracy(task="multiclass", num_classes=num_classes))
+            setattr(
+                self,
+                f"{stage}_acc",
+                Accuracy(task="multiclass", num_classes=num_classes),
+            )
             setattr(self, f"{stage}_loss", MeanMetric())
         self.val_acc_best = MaxMetric()
 
@@ -76,7 +80,9 @@ class ClassificationLitModule(LightningModule):
 
     def load_state_dict(self, state_dict, strict=True, assign=False):
         return super().load_state_dict(
-            _map_legacy_state_dict(self.method, state_dict), strict=strict, assign=assign
+            _map_legacy_state_dict(self.method, state_dict),
+            strict=strict,
+            assign=assign,
         )
 
     def configure_optimizers(self) -> OptimizerLRScheduler:

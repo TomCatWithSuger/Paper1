@@ -1,7 +1,12 @@
-"""条件语音方法的组件所有权和规范输入接口。"""
+"""模块说明：条件语音方法的组件所有权和规范输入接口。"""
 
 import torch
 from torch import nn
+
+VoiceLoss = tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+VoiceLossWithDiagnostics = tuple[
+    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]
+]
 
 
 def reject_inference_mode_jvp() -> None:

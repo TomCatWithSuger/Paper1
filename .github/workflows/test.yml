@@ -1,5 +1,15 @@
 name: Tests
 
+# CPU 多进程测试限制每个进程的数学库线程数，避免共享 runner 上的线程争用。
+env:
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  OPENBLAS_NUM_THREADS: "1"
+
+defaults:
+  run:
+    shell: bash -el {0}
+
 on:
   push:
     branches: [main]
@@ -21,23 +31,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - name: Set up Conda
+        uses: conda-incubator/setup-miniconda@v3
         with:
-          version: "0.11.12"
-          enable-cache: true
-
-      - name: Install Python
-        run: uv python install 3.10
-
-      - name: Sync dependencies
-        run: uv sync --locked
+          activate-environment: Lightning-Template
+          environment-file: environment.yaml
+          auto-activate-base: false
 
       - name: List dependencies
-        run: uv pip list
+        run: conda list
 
       - name: Run pytest
-        run: uv run --frozen pytest -v
+        run: python -m pytest -v
 
   run_tests_macos:
     runs-on: ${{ matrix.os }}
@@ -53,23 +58,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - name: Set up Conda
+        uses: conda-incubator/setup-miniconda@v3
         with:
-          version: "0.11.12"
-          enable-cache: true
-
-      - name: Install Python
-        run: uv python install 3.10
-
-      - name: Sync dependencies
-        run: uv sync --locked
+          activate-environment: Lightning-Template
+          environment-file: environment.yaml
+          auto-activate-base: false
 
       - name: List dependencies
-        run: uv pip list
+        run: conda list
 
       - name: Run pytest
-        run: uv run --frozen pytest -v
+        run: python -m pytest -v
 
   run_tests_windows:
     runs-on: ${{ matrix.os }}
@@ -85,23 +85,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - name: Set up Conda
+        uses: conda-incubator/setup-miniconda@v3
         with:
-          version: "0.11.12"
-          enable-cache: true
-
-      - name: Install Python
-        run: uv python install 3.10
-
-      - name: Sync dependencies
-        run: uv sync --locked
+          activate-environment: Lightning-Template
+          environment-file: environment.yaml
+          auto-activate-base: false
 
       - name: List dependencies
-        run: uv pip list
+        run: conda list
 
       - name: Run pytest
-        run: uv run --frozen pytest -v
+        run: python -m pytest -v
 
   # upload code coverage report
   code-coverage:
@@ -111,20 +106,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - name: Set up Conda
+        uses: conda-incubator/setup-miniconda@v3
         with:
-          version: "0.11.12"
-          enable-cache: true
-
-      - name: Install Python
-        run: uv python install 3.10
-
-      - name: Sync dependencies
-        run: uv sync --locked
+          activate-environment: Lightning-Template
+          environment-file: environment.yaml
+          auto-activate-base: false
 
       - name: Run tests and collect coverage
-        run: uv run --frozen pytest --cov src
+        run: python -m pytest --cov src
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3

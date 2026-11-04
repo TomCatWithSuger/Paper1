@@ -32,6 +32,14 @@ ______________________________________________________________________
 
 `configs/__init__.py` 只用于打包时包含配置目录，不负责加载 YAML。
 
+### 无下载的实验冒烟
+
+```bash
+python src/train.py experiment=flow_matching_synthetic
+```
+
+该实验使用 CPU 合成张量，默认执行两次训练更新和一次测试，不读取论文数据或预训练权重。数据配置为 `data/synthetic.yaml`，复用现有 FlowMatching、DenseTimeField 与训练 Module，不新增算法或生命周期实现。预测、生成及优化器续跑的验证见[开发规范的离线演练](../docs/architecture/%E7%A0%94%E7%A9%B6%E6%A8%A1%E6%9D%BF%E5%BC%80%E5%8F%91%E8%A7%84%E8%8C%83.md#101-%E7%A6%BB%E7%BA%BF%E5%AE%9E%E9%AA%8C%E6%BC%94%E7%BB%83)。
+
 ______________________________________________________________________
 
 ## 2. 配置是如何被读取的

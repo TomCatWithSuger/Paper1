@@ -1,4 +1,7 @@
-"""VCTK sample discovery and pluggable split strategies."""
+"""模块说明：发现 VCTK 样本并提供可配置的数据划分策略。
+
+VCTK sample discovery and pluggable split strategies.
+"""
 
 from dataclasses import dataclass
 from pathlib import Path

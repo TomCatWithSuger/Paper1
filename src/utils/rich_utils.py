@@ -1,3 +1,5 @@
+"""模块说明：输出配置树并检查或保存实验标签。"""
+
 from pathlib import Path
 from typing import Sequence
 

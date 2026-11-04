@@ -1,3 +1,6 @@
+"""模块说明：验证条件 Flow Matching 编码、目标、采样及训练模块契约。"""
+
+import pytest
 import torch
 from torch import nn
 from torch.nn.utils import parametrize
@@ -59,6 +62,41 @@ def test_condition_encoder_shapes() -> None:
 
     assert condition.shape == (2, 8, 12)
     assert torch.count_nonzero(condition[1, :, 9:]) == 0
+
+
+def test_conditional_sampling_matches_original_loop_and_rng():
+    method = ConditionalFlowMatching(_network(), _condition_encoder(), integration_steps=3).eval()
+    condition = torch.randn(2, 8, 13)
+    mask = torch.ones(2, 13, dtype=torch.bool)
+    mask[1, 10:] = False
+    state = torch.random.get_rng_state()
+    with torch.no_grad():
+        expected = torch.randn(2, 8, 13)
+        for step in range(3):
+            times = torch.full((2,), step / 3)
+            expected = expected + (1.0 / 3) * method(expected, times, condition, mask)
+        expected = method.apply_mask(expected, mask)
+    expected_state = torch.random.get_rng_state()
+    torch.random.set_rng_state(state)
+    actual = method.sample(condition, mask)
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    assert torch.equal(expected_state, torch.random.get_rng_state())
+
+
+def test_conditional_loss_rejects_broadcastable_network_output():
+    class IncompatibleField(nn.Module):
+        def forward(self, samples, times, condition, target_mask):
+            return samples[:, :1]
+
+    method = ConditionalFlowMatching(IncompatibleField(), _condition_encoder())
+    with pytest.raises(ValueError, match="速度场"):
+        method.compute_loss(
+            target_mels=torch.ones(2, 8, 13),
+            target_mask=torch.ones(2, 13, dtype=torch.bool),
+            content_features=torch.ones(2, 8, 11),
+            content_lengths=torch.tensor([11, 9]),
+            speaker_features=torch.ones(2, 8),
+        )
 
 
 def test_continuous_time_embedding_derivative_is_bounded() -> None:

@@ -1,7 +1,9 @@
+"""模块说明：缓存并判断测试所需可选依赖是否可导入。"""
+
 import platform
 
 import pkg_resources
-from lightning.fabric.accelerators import TPUAccelerator
+from lightning.fabric.accelerators.xla import XLAAccelerator
 
 
 def _package_available(package_name: str) -> bool:
@@ -17,7 +19,7 @@ def _package_available(package_name: str) -> bool:
         return False
 
 
-_TPU_AVAILABLE = TPUAccelerator.is_available()
+_TPU_AVAILABLE = XLAAccelerator.is_available()
 
 _IS_WINDOWS = platform.system() == "Windows"
 

@@ -16,6 +16,12 @@ clean-logs: ## Clean logs
 format: ## Run pre-commit hooks
 	pre-commit run -a
 
+quality: ## 在已激活的 Conda 环境执行全部研究质量门禁
+	python scripts/quality.py all
+
+quality-selftest: ## 验证质量门禁的正负例，不读取实验数据
+	python scripts/quality.py selftest
+
 lint-pr: ## 仅检查相对 origin/main 已提交的新增/修改文件（对齐 PR CI）
 	git fetch origin main
 	git diff --name-only --diff-filter=ACMR -z origin/main...HEAD | xargs -0 -r pre-commit run --show-diff-on-failure --files

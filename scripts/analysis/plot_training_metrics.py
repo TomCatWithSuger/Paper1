@@ -1,4 +1,4 @@
-"""绘制单次 Lightning 训练的损失曲线并生成统计摘要。"""
+"""模块说明：绘制单次 Lightning 训练的损失曲线并生成统计摘要。"""
 
 import argparse
 import sys
