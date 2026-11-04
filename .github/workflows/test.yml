@@ -1,5 +1,11 @@
 name: Tests
 
+# CPU 多进程测试限制每个进程的数学库线程数，避免共享 runner 上的线程争用。
+env:
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  OPENBLAS_NUM_THREADS: "1"
+
 defaults:
   run:
     shell: bash -el {0}

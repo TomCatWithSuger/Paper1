@@ -90,6 +90,7 @@ def test_train_ddp_sim(cfg_train: DictConfig, monkeypatch: pytest.MonkeyPatch) -
     """
     monkeypatch.setenv("OMP_NUM_THREADS", "1")
     monkeypatch.setenv("MKL_NUM_THREADS", "1")
+    monkeypatch.setenv("OPENBLAS_NUM_THREADS", "1")
 
     HydraConfig().set_config(cfg_train)
     with open_dict(cfg_train):
