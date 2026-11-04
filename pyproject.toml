@@ -13,6 +13,7 @@ dependencies = [
   "hydra-optuna-sweeper==1.2.0",
   "lightning==2.6.5",
   "numpy==2.2.6",
+  "onnxruntime==1.23.2",
   "requests>=2,<3",
   "rich==15.0.0",
   "rootutils==1.0.7",
@@ -24,6 +25,7 @@ dependencies = [
   "torchaudio==2.5.1",
   "torchmetrics==0.11.4",
   "torchvision==0.20.1",
+  "vocos==0.1.0",
 ]
 
 [dependency-groups]
