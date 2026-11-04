@@ -94,7 +94,7 @@ class CampPlus:
 
 
 def _execute(output, model):
-    protocol = json.loads((output / "protocol.json").read_text())
+    protocol = json.loads((output / "protocol.json").read_text(encoding="utf-8"))
     if sha256(protocol["input_csv"]) != protocol["input_sha256"]:
         raise ValueError("原始评分表已变化，拒绝混合协议")
     if sha256(protocol["speaker_info"]) != protocol["speaker_info_sha256"]:
@@ -184,11 +184,11 @@ def _execute(output, model):
         "limitations": "CER沿用Whisper；相似度绝对值不可跨编码器比较；真实源/目标采用原始48k输入重采样而非旧22050中间链路；未执行听测",
     }
     (directory / "COMPLETE.json").write_text(
-        json.dumps(audit, ensure_ascii=False, indent=2) + "\n"
+        json.dumps(audit, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     protocol["independent_scoring"] = "completed_campplus"
     (output / "protocol.json").write_text(
-        json.dumps(protocol, ensure_ascii=False, indent=2) + "\n"
+        json.dumps(protocol, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     return audit
 

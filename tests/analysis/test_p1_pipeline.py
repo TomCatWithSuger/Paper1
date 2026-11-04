@@ -19,6 +19,8 @@ from tests.helpers.diagnostic_models import (
     diagnostic_batch,
 )
 
+pytestmark = pytest.mark.usefixtures("legacy_text_encoding")
+
 
 @pytest.fixture()
 def p1_runtime(tmp_path, monkeypatch):
@@ -27,12 +29,12 @@ def p1_runtime(tmp_path, monkeypatch):
     (root / "src").mkdir(parents=True)
     script = root / "scripts/analysis/evaluate_p1_latest.py"
     script.parent.mkdir(parents=True)
-    script.write_text("# 本地源码快照\n")
-    (root / "src/example.py").write_text("# 本地源码快照\n")
+    script.write_text("# 本地源码快照\n", encoding="utf-8")
+    (root / "src/example.py").write_text("# 本地源码快照\n", encoding="utf-8")
     output = tmp_path / "output"
     output.mkdir()
-    (output / "preflight.json").write_text("{}")
-    (output / "test_manifest.csv").write_text("fixture")
+    (output / "preflight.json").write_text("{}", encoding="utf-8")
+    (output / "test_manifest.csv").write_text("fixture", encoding="utf-8")
     manifest = [
         {
             "index": 0,
@@ -45,7 +47,9 @@ def p1_runtime(tmp_path, monkeypatch):
     ]
     by_id = {uid: SimpleNamespace(text="hello world") for uid in ("p1_001", "p2_001")}
     monkeypatch.setattr(evaluation, "ROOT", root)
-    monkeypatch.setattr(evaluation, "_gpu_state", lambda path: path.write_text("CPU fixture"))
+    monkeypatch.setattr(
+        evaluation, "_gpu_state", lambda path: path.write_text("CPU fixture", encoding="utf-8")
+    )
     monkeypatch.setattr(evaluation, "_load_manifest_samples", lambda *args: (manifest, by_id))
     monkeypatch.setattr(evaluation, "_model_config", lambda *args: {"data": {}})
     monkeypatch.setattr(
@@ -84,7 +88,7 @@ def p1_runtime(tmp_path, monkeypatch):
         directory = args[4]
         directory.mkdir(parents=True, exist_ok=True)
         (directory / "evaluation_records.jsonl").write_text(
-            "".join(json.dumps(row) + "\n" for row in records)
+            "".join(json.dumps(row) + "\n" for row in records), encoding="utf-8"
         )
 
     monkeypatch.setattr(evaluation, "evaluate_unified", generate)
@@ -97,7 +101,7 @@ def test_smoke_full_and_resume(p1_runtime, monkeypatch):
     with pytest.raises(AssertionError, match="冒烟"):
         evaluation.run(output, "full", "cpu")
     evaluation.run(output, "smoke", "cpu")
-    passed = json.loads((output / "smoke_corrected/PASSED.json").read_text())
+    passed = json.loads((output / "smoke_corrected/PASSED.json").read_text(encoding="utf-8"))
     assert passed["generated"] == 6 and passed["controls"] == 4
     evaluation.run(output, "full", "cpu")
     metrics = read_csv(output / "full/per_sample_metrics.csv")
@@ -112,7 +116,7 @@ def test_smoke_full_and_resume(p1_runtime, monkeypatch):
     monkeypatch.setattr(vocos, "decode", decode)
     evaluation.run(output, "full", "cpu")
     assert decode.call_count == 5  # 三次预热加两条真实语音重建。
-    ledger = (output / "full/waveform_records.jsonl").read_text().splitlines()
+    ledger = (output / "full/waveform_records.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(ledger) == 6
 
 
@@ -158,7 +162,7 @@ def test_preflight_audits_source_path_cache_and_weights(p1_runtime, monkeypatch)
     monkeypatch.setattr(evaluation, "_load_manifest_samples", lambda *args: (manifest, by_id))
     baseline = root / "analysis_results/baseline_validation"
     baseline.mkdir(parents=True)
-    (baseline / "test_manifest.csv").write_text("fixture")
+    (baseline / "test_manifest.csv").write_text("fixture", encoding="utf-8")
     cache = root / "cache"
     monkeypatch.setattr(evaluation, "CACHE", cache)
     for kind, shape in (("content", (256, 2)), ("speaker", (256,))):
@@ -168,7 +172,7 @@ def test_preflight_audits_source_path_cache_and_weights(p1_runtime, monkeypatch)
     for label, run in evaluation.RUNS.items():
         run_dir = root / "logs/train/runs" / run
         (run_dir / ".hydra").mkdir(parents=True)
-        (run_dir / ".hydra/config.yaml").write_text("data: {}")
+        (run_dir / ".hydra/config.yaml").write_text("data: {}", encoding="utf-8")
         (run_dir / evaluation.BEST[label]).write_bytes(b"checkpoint fixture")
     monkeypatch.setattr(
         evaluation, "_best_checkpoint", lambda directory: next(directory.glob("*.ckpt"))
@@ -194,15 +198,15 @@ def test_preflight_audits_source_path_cache_and_weights(p1_runtime, monkeypatch)
     for name in ("vocos/config.yaml", "meanvc/ecapa_tdnn.py", "meanvc/wavlm_large.pt"):
         path = root / "pretrained" / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("fixture")
+        path.write_text("fixture", encoding="utf-8")
     (root / "pretrained/whisper-small").mkdir()
-    (root / "pretrained/whisper-small/config.json").write_text("{}")
+    (root / "pretrained/whisper-small/config.json").write_text("{}", encoding="utf-8")
     torch.save(
         {**vocos.state_dict(), "feature_extractor.extra": torch.ones(1)},
         root / "pretrained/vocos/pytorch_model.bin",
     )
     evaluation.run(output, "preflight", "cpu")
-    audit = json.loads((output / "preflight.json").read_text())
+    audit = json.loads((output / "preflight.json").read_text(encoding="utf-8"))
     assert audit["models"]["B3"]["diffused_real_source_verified"] is True
     assert all(row["same_seed_repeat_identical"] for row in audit["models"].values())
     assert len(audit["cache_files"]) == 202

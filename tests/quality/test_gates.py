@@ -9,6 +9,7 @@
 # ====================
 
 import json
+import os
 import shutil
 import subprocess  # nosec B404 - 只运行本地门禁脚本的受控正反例。
 import sys
@@ -64,6 +65,7 @@ class GateTests(unittest.TestCase):
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
         )
 
@@ -188,12 +190,16 @@ class GateTests(unittest.TestCase):
 
     def test_environment_quality_requirements_match(self) -> None:
         """环境中的显式质量依赖必须与固定版本清单一致，且可作为包要求解析。"""
-        environment = yaml.safe_load((PROJECT_ROOT / "environment.yaml").read_text())
+        environment = yaml.safe_load(
+            (PROJECT_ROOT / "environment.yaml").read_text(encoding="utf-8")
+        )
         pip_dependencies = next(
             entry["pip"] for entry in environment["dependencies"] if isinstance(entry, dict)
         )
         parsed = {Requirement(value).name: str(Requirement(value)) for value in pip_dependencies}
-        requirements = (PROJECT_ROOT / "requirements-quality.txt").read_text().splitlines()
+        requirements = (
+            (PROJECT_ROOT / "requirements-quality.txt").read_text(encoding="utf-8").splitlines()
+        )
         for value in requirements:
             if value.strip() and not value.lstrip().startswith("#"):
                 requirement = Requirement(value)
@@ -203,6 +209,27 @@ class GateTests(unittest.TestCase):
         """工具缺失不能自动安装或返回成功。"""
         with patch("scripts.quality.require_module", side_effect=RuntimeError("missing tool")):
             self.assertEqual(main(["length", "--root", str(self.root)]), 1)
+
+    def test_cli_reports_chinese_with_legacy_stdio(self) -> None:
+        """非 UTF-8 管道环境仍须完整输出中文诊断，而不是因编码错误中断。"""
+        directory = self.root / "src" / "nested"
+        directory.mkdir()
+        (directory / "sample.py").write_text("", encoding="utf-8")
+        with patch.dict(os.environ, {"PYTHONIOENCODING": "cp1252"}):
+            result = self.run_gate("architecture")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("__init__.py", result.stdout)
+        self.assertNotIn("UnicodeEncodeError", result.stderr)
+
+    def test_types_with_legacy_stdio(self) -> None:
+        """Node 的 UTF-8 类型报告在非 UTF-8 Python 管道环境中仍可解析。"""
+        (self.root / "pyrightconfig.json").write_text(
+            json.dumps({"include": ["src"], "typeCheckingMode": "basic"}), encoding="utf-8"
+        )
+        self.write_source("def value() -> int:\n    return 1\n")
+        with patch.dict(os.environ, {"PYTHONIOENCODING": "cp1252"}):
+            result = self.run_gate("types")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_missing_node_fails_without_download(self) -> None:
         """本机无 Node 时失败，不调用 Pyright 的下载包装器。"""

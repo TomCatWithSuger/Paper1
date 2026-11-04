@@ -51,7 +51,7 @@ def crossed_ci(values, metadata):
 def run(output):
     """为两份评分补充源与目标说话人及文本的三向聚类敏感性区间。"""
     output = Path(output)
-    protocol = json.loads((output / "protocol.json").read_text())
+    protocol = json.loads((output / "protocol.json").read_text(encoding="utf-8"))
     genders = speaker_genders(protocol["speaker_info"])
     results, inputs = [], {}
     for scorer, name in [
@@ -94,6 +94,6 @@ def run(output):
         "purpose": "补充目标说话人复用的敏感性核查；探索性分析，非跨训练种子或多重比较校正",
     }
     (output / "sensitivity_protocol.json").write_text(
-        json.dumps(audit, ensure_ascii=False, indent=2) + "\n"
+        json.dumps(audit, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     (output / "source/sensitivity.py").write_bytes(Path(__file__).read_bytes())

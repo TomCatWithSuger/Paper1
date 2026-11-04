@@ -19,6 +19,8 @@ from tests.helpers.diagnostic_models import (
     diagnostic_batch,
 )
 
+pytestmark = pytest.mark.usefixtures("legacy_text_encoding")
+
 
 @pytest.fixture()
 def endpoint_runtime(tmp_path, monkeypatch):
@@ -27,8 +29,8 @@ def endpoint_runtime(tmp_path, monkeypatch):
     (root / "src").mkdir(parents=True)
     script = root / "scripts/analysis/run_endpoint_pilot.py"
     script.parent.mkdir(parents=True)
-    script.write_text("# 测试源码快照\n")
-    (root / "src/local.py").write_text("# 测试源码快照\n")
+    script.write_text("# 测试源码快照\n", encoding="utf-8")
+    (root / "src/local.py").write_text("# 测试源码快照\n", encoding="utf-8")
     output = tmp_path / "output"
     output.mkdir()
     manifests = {}
@@ -51,7 +53,7 @@ def endpoint_runtime(tmp_path, monkeypatch):
             for index in range(64)
         ]
         manifests[cohort] = rows
-        (output / filename).write_text(json.dumps(rows))
+        (output / filename).write_text(json.dumps(rows), encoding="utf-8")
     ids = {row["source_id"] for row in manifests["p2_fixed"]} | {"p3_000"}
     items = {
         uid: {
@@ -67,7 +69,9 @@ def endpoint_runtime(tmp_path, monkeypatch):
     for arm in ("control", "intervention"):
         directory = output / arm
         (directory / "checkpoints").mkdir(parents=True)
-        (directory / "TRAINING_COMPLETE.json").write_text(json.dumps({"updates": 5000}))
+        (directory / "TRAINING_COMPLETE.json").write_text(
+            json.dumps({"updates": 5000}), encoding="utf-8"
+        )
         torch.save(
             {
                 "state_dict": model.state_dict(),
@@ -80,7 +84,8 @@ def endpoint_runtime(tmp_path, monkeypatch):
     resource = root / "resource.bin"
     resource.write_bytes(b"fixture")
     (output / "identity.json").write_text(
-        json.dumps({"resources": {str(resource): evaluation._sha256_file(resource)}})
+        json.dumps({"resources": {str(resource): evaluation._sha256_file(resource)}}),
+        encoding="utf-8",
     )
     monkeypatch.setattr(evaluation, "ROOT", root)
     monkeypatch.setattr(evaluation, "BASE_CHECKPOINT", initial)
@@ -134,7 +139,7 @@ def test_generate_score_resume_and_reports(endpoint_runtime, monkeypatch):
     assert all(float(row["cer"]) == 0 for row in metrics)
     assert all(float(row["target_preference_gap"]) == 0 for row in metrics)
     assert all(Path(row["generated_path"]).is_file() for row in generated)
-    complete = json.loads((directory / "EVALUATION_COMPLETE.json").read_text())
+    complete = json.loads((directory / "EVALUATION_COMPLETE.json").read_text(encoding="utf-8"))
     assert complete["records"] == 768 and complete["noise_repeats"] == 2
 
     sample = Mock(wraps=model.method.sample)

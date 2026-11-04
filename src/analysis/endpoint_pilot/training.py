@@ -134,7 +134,7 @@ def prepare(output):
     for sample in split.train:
         for kind in ["content", "speaker"]:
             assert (CACHE / kind / f"{sample.utterance_id}.pt").is_file()
-    resources = json.loads((P2_OUTPUT / "identity.json").read_text())["resources"]
+    resources = json.loads((P2_OUTPUT / "identity.json").read_text(encoding="utf-8"))["resources"]
     for filename, digest in resources.items():
         assert _sha256_file(Path(filename)) == digest
     identity = {
@@ -190,19 +190,21 @@ def prepare(output):
 def train(output, arm, device, workers=8):
     """执行指定实验臂的固定步数训练并记录裁剪、探针和中间权重。"""
     torch.set_num_threads(2)
-    assert json.loads((output / "preflight.json").read_text())["passed"]
+    assert json.loads((output / "preflight.json").read_text(encoding="utf-8"))["passed"]
     plan = safe_load(output / "common_plan.pt")
     assert plan["micro_batch"] == MICRO_BATCH
     assert (
         _sha256_file(output / "common_plan.pt")
-        == json.loads((output / "identity.json").read_text())["common_plan_sha256"]
+        == json.loads((output / "identity.json").read_text(encoding="utf-8"))["common_plan_sha256"]
     )
     reference_rows = None
     if arm == "intervention":
         assert (output / "control/TRAINING_COMPLETE.json").is_file()
         reference_rows = [
             json.loads(line)
-            for line in (output / "control/training.jsonl").read_text().splitlines()
+            for line in (output / "control/training.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
         ]
         assert len(reference_rows) == PILOT_STEPS
     directory = output / arm

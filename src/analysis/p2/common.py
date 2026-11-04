@@ -101,7 +101,7 @@ def load_samples():
 
 def load_manifest(output):
     """读取已经固定的验证配对清单，不重新抽样。"""
-    return json.loads((output / "validation_manifest.json").read_text())
+    return json.loads((output / "validation_manifest.json").read_text(encoding="utf-8"))
 
 
 def prepared_items(manifest, config, by_id):
@@ -223,7 +223,9 @@ def prepare(output: Path):
         "causality": "区间误差为自重建路径诊断；与转换CER相关不等于因果；不改训练目标",
     }
     _json(output / "protocol.json", protocol)
-    prior = json.loads((ROOT / "analysis_results/p1_latest_20261024/preflight.json").read_text())
+    prior = json.loads(
+        (ROOT / "analysis_results/p1_latest_20261024/preflight.json").read_text(encoding="utf-8")
+    )
     identity = {
         "resources": {},
         "caches": {},

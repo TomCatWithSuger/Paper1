@@ -48,7 +48,11 @@ from src.analysis.vocoder.models import _AsrScorer, _load_vocos, _SpeakerScorer
 
 def _rows(path):
     return (
-        [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+        [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
         if path.exists()
         else []
     )
@@ -81,7 +85,7 @@ def generate(output, device, smoke=False):
     completed = {(r["experiment_id"], r["source_id"], r["repeat"]) for r in records}
     identities = {}
     configs = CONFIGS
-    initial = json.loads((output / "identity.json").read_text())
+    initial = json.loads((output / "identity.json").read_text(encoding="utf-8"))
     fingerprints = initial["checkpoint_files"]
     best_hash = next(
         v

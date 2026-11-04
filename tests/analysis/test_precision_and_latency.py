@@ -12,6 +12,8 @@ from src.analysis.p2 import precision
 from src.analysis.p4.identity import read_csv
 from tests.helpers.diagnostic_models import AnalyticModel, diagnostic_batch
 
+pytestmark = pytest.mark.usefixtures("legacy_text_encoding")
+
 
 def test_precision_matches_analytic_jvp_and_endpoint_difference(tmp_path, monkeypatch):
     """两种差分方案均应匹配线性场的解析 JVP，端点差分保留在时间域内。"""
@@ -44,7 +46,7 @@ def test_precision_matches_analytic_jvp_and_endpoint_difference(tmp_path, monkey
     backward = read_csv(directory / "endpoint_finite_difference.csv")
     assert len(backward) == 64
     assert all(row["scheme"] == "second_order_backward_inside_domain" for row in backward)
-    audit = json.loads((directory / "endpoint_fd_check.json").read_text())
+    audit = json.loads((directory / "endpoint_fd_check.json").read_text(encoding="utf-8"))
     assert audit["passed"] is True and audit["n_sources"] == 16
     assert audit["max_relative_l2"] < 0.001
 
@@ -52,7 +54,7 @@ def test_precision_matches_analytic_jvp_and_endpoint_difference(tmp_path, monkey
 def test_interleaved_latency_has_balanced_calls_and_seed_replay(tmp_path, monkeypatch):
     """计时器与设备边界可控，验证每个配对的六配置三次重复及分位数。"""
     (tmp_path / "full").mkdir()
-    (tmp_path / "full/PASSED.json").write_text("{}")
+    (tmp_path / "full/PASSED.json").write_text("{}", encoding="utf-8")
     manifest = [
         {"index": index, "source_id": f"p1_{index}", "reference_id": "p2_0"} for index in range(2)
     ]
@@ -61,7 +63,9 @@ def test_interleaved_latency_has_balanced_calls_and_seed_replay(tmp_path, monkey
     monkeypatch.setattr(latency, "_collator", lambda *args: None)
     monkeypatch.setattr(latency, "_prepare_pair", lambda *args: (diagnostic_batch(), None, 22050))
     monkeypatch.setattr(latency, "_to_device", lambda batch, device: batch)
-    monkeypatch.setattr(latency, "_gpu_state", lambda path: path.write_text("CPU fixture"))
+    monkeypatch.setattr(
+        latency, "_gpu_state", lambda path: path.write_text("CPU fixture", encoding="utf-8")
+    )
     sync = Mock()
     seed = Mock()
     generate = Mock(return_value=torch.ones(1, 80, 8))
@@ -86,7 +90,7 @@ def test_interleaved_latency_has_balanced_calls_and_seed_replay(tmp_path, monkey
     assert [call.args[0] for call in seed.call_args_list] == [latency.SEED] * 18 + [
         latency.SEED + 1
     ] * 18
-    protocol = json.loads((target / "protocol.json").read_text())
+    protocol = json.loads((target / "protocol.json").read_text(encoding="utf-8"))
     assert protocol["repeats"] == 3 and protocol["shared_gpu"] is True
     with pytest.raises(FileExistsError):
         latency.run(tmp_path)

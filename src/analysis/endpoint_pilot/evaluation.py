@@ -45,7 +45,11 @@ from src.models.algorithms.autodiff import tensor_jvp
 
 def _rows(path):
     return (
-        [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+        [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
         if path.exists()
         else []
     )
@@ -84,7 +88,7 @@ def generate(output, device):
     """为初始及双臂权重生成固定与保留队列的 Mel，同时记录端点诊断。"""
     directory = output / "evaluation"
     directory.mkdir(exist_ok=True)
-    identity = json.loads((output / "identity.json").read_text())
+    identity = json.loads((output / "identity.json").read_text(encoding="utf-8"))
     for filename, digest in identity["resources"].items():
         assert _sha256_file(Path(filename)) == digest, filename
     from src.analysis.endpoint_pilot.data import tensor_hash
@@ -111,7 +115,12 @@ def generate(output, device):
         },
     )
     for arm in ["control", "intervention"]:
-        assert json.loads((output / arm / "TRAINING_COMPLETE.json").read_text())["updates"] == 5000
+        assert (
+            json.loads((output / arm / "TRAINING_COMPLETE.json").read_text(encoding="utf-8"))[
+                "updates"
+            ]
+            == 5000
+        )
     configs = [
         ("initial", BASE_CHECKPOINT),
         ("control", output / "control/checkpoints/last.ckpt"),
@@ -132,7 +141,7 @@ def generate(output, device):
         ("p2_fixed", "p2_validation_manifest.json"),
         ("reserved", "reserved_validation_manifest.json"),
     ]:
-        manifest = json.loads((output / filename).read_text())
+        manifest = json.loads((output / filename).read_text(encoding="utf-8"))
         items = prepared_items(manifest, config, by_id)
         item_hashes = {
             uid: {
@@ -273,7 +282,7 @@ def score(output, device):
     directory = output / "evaluation"
     config, _, by_id = load_samples()
     manifests = {
-        name: json.loads((output / filename).read_text())
+        name: json.loads((output / filename).read_text(encoding="utf-8"))
         for name, filename in [
             ("p2_fixed", "p2_validation_manifest.json"),
             ("reserved", "reserved_validation_manifest.json"),

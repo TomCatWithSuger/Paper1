@@ -14,6 +14,8 @@ from src.analysis.p2 import common
 from src.data.components.vctk_splits import VCTKSample, VCTKSplit
 from tests.helpers.diagnostic_models import AnalyticModel, diagnostic_batch
 
+pytestmark = pytest.mark.usefixtures("legacy_text_encoding")
+
 
 @pytest.fixture()
 def protocol_resources(tmp_path, monkeypatch):
@@ -47,7 +49,7 @@ def protocol_resources(tmp_path, monkeypatch):
     for label, run in common.RUNS.items():
         directory = root / "logs/train/runs" / run
         (directory / ".hydra").mkdir(parents=True)
-        (directory / ".hydra/config.yaml").write_text("data: {}")
+        (directory / ".hydra/config.yaml").write_text("data: {}", encoding="utf-8")
         (directory / "checkpoints").mkdir()
         for name in ("epoch_382.ckpt", "epoch_040.ckpt", "last.ckpt"):
             torch.save(
@@ -59,19 +61,22 @@ def protocol_resources(tmp_path, monkeypatch):
     resource = root / "resource.bin"
     resource.write_bytes(b"resource fixture")
     (prior / "preflight.json").write_text(
-        json.dumps({"resource_files": {str(resource): common._sha256_file(resource)}})
+        json.dumps({"resource_files": {str(resource): common._sha256_file(resource)}}),
+        encoding="utf-8",
     )
     script = root / "scripts/analysis/evaluate_p2.py"
     script.parent.mkdir(parents=True)
-    script.write_text("# 测试源码\n")
+    script.write_text("# 测试源码\n", encoding="utf-8")
     (root / "src").mkdir()
-    (root / "src/local.py").write_text("# 测试源码\n")
+    (root / "src/local.py").write_text("# 测试源码\n", encoding="utf-8")
     config = {"data": {"sample_rate": 16000, "max_duration_seconds": 0.1}}
     monkeypatch.setattr(common, "ROOT", root)
     monkeypatch.setattr(common, "CACHE", cache)
     monkeypatch.setattr(data, "CACHE", cache)
     monkeypatch.setattr(common, "load_samples", lambda: (config, split, by_id))
-    monkeypatch.setattr(common, "_gpu_state", lambda path: path.write_text("CPU fixture"))
+    monkeypatch.setattr(
+        common, "_gpu_state", lambda path: path.write_text("CPU fixture", encoding="utf-8")
+    )
     return root, config, split, by_id
 
 
@@ -88,10 +93,10 @@ def test_frozen_protocol_and_reserved_cohort_are_disjoint(protocol_resources, tm
     assert any(row["reference_same_text"] for row in manifest)
     assert any(not row["reference_same_text"] for row in manifest)
     assert all(row["source_id"] != row["donor_id"] for row in manifest)
-    protocol = json.loads((output / "protocol.json").read_text())
+    protocol = json.loads((output / "protocol.json").read_text(encoding="utf-8"))
     assert protocol["no_train_or_test_utterance_used"] is True
     assert protocol["split_counts"] == {"train": 1, "val": 144, "test": 1}
-    identity = json.loads((output / "identity.json").read_text())
+    identity = json.loads((output / "identity.json").read_text(encoding="utf-8"))
     assert len(identity["checkpoint_files"]) == 4
     assert len(identity["caches"]) == 128
     assert (output / "code_snapshot/scripts/analysis/evaluate_p2.py").is_file()

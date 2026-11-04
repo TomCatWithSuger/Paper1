@@ -18,7 +18,7 @@ import subprocess  # nosec B404 - 仅执行已定位的本地工具，不使用�
 import sys
 import tokenize
 from collections.abc import Sequence
-from io import StringIO
+from io import StringIO, TextIOWrapper
 from pathlib import Path
 
 # ====================
@@ -52,7 +52,10 @@ def run_command(command: Sequence[str], root: Path) -> int:
     """执行已安装工具，保留其退出码和诊断。"""
     print("+ " + " ".join(command), flush=True)
     return subprocess.run(  # nosec B603 - 参数数组由内部工具入口构造，不经过命令解释器。
-        list(command), cwd=root, check=False
+        list(command),
+        cwd=root,
+        check=False,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     ).returncode
 
 
@@ -172,6 +175,7 @@ def _types(root: Path) -> int:
         cwd=root,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
     if result.stderr:
@@ -258,4 +262,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 # ====================
 
 if __name__ == "__main__":
+    # 门禁含中文诊断；Windows 终端与重定向管道均使用稳定的 UTF-8 输出。
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, TextIOWrapper):
+            stream.reconfigure(encoding="utf-8")
     raise SystemExit(main())

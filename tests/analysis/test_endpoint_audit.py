@@ -12,6 +12,8 @@ from src.analysis.endpoint_pilot import reporting, runtime
 from src.analysis.p4.identity import read_csv
 from src.optim.warmup_cosine import WarmupCosineLR
 
+pytestmark = pytest.mark.usefixtures("legacy_text_encoding")
+
 
 def test_restore_verifies_adam_scheduler_and_parameter_order(tmp_path, monkeypatch):
     """先做一次真实 Adam 更新，再从文件恢复并逐项比较所有状态。"""
@@ -90,8 +92,10 @@ def training_records(tmp_path):
         "scheduler_state_exact": True,
         "parameter_names_exact": True,
     }
-    (tmp_path / "initial_restore_audit.json").write_text(json.dumps(initial))
-    (tmp_path / "identity.json").write_text(json.dumps({"base_checkpoint_sha256": "base"}))
+    (tmp_path / "initial_restore_audit.json").write_text(json.dumps(initial), encoding="utf-8")
+    (tmp_path / "identity.json").write_text(
+        json.dumps({"base_checkpoint_sha256": "base"}), encoding="utf-8"
+    )
     gate = torch.arange(5000) % 2 == 0
     torch.save(
         {"epochs": torch.full((5000,), 387), "endpoint_mask": gate[:, None]},
@@ -100,7 +104,7 @@ def training_records(tmp_path):
     for arm_index, arm in enumerate(("control", "intervention")):
         directory = tmp_path / arm
         (directory / "checkpoints").mkdir(parents=True)
-        (directory / "restore_audit.json").write_text(json.dumps(initial))
+        (directory / "restore_audit.json").write_text(json.dumps(initial), encoding="utf-8")
         rows = [
             {
                 "pilot_update": index + 1,
@@ -177,7 +181,9 @@ def training_records(tmp_path):
 def test_training_audit_checks_common_stream_and_final_checkpoint(training_records):
     """从原始账本计算统计，并验证末期权重和公共随机流的审计结论。"""
     reporting.training_audit(training_records)
-    audit = json.loads((training_records / "paired_training_audit.json").read_text())
+    audit = json.loads(
+        (training_records / "paired_training_audit.json").read_text(encoding="utf-8")
+    )
     assert audit["updates_each"] == 5000 and audit["last_is_actual_final"] is True
     assert audit["all_data_noise_crop_lr_match"] is True
     statistics = read_csv(training_records / "training_statistics.csv")
@@ -212,9 +218,9 @@ def test_training_audit_rejects_inconsistent_evidence(training_records, changed)
         _json_lines(path, rows)
     elif changed == "restore":
         path = directory / "restore_audit.json"
-        restored = json.loads(path.read_text())
+        restored = json.loads(path.read_text(encoding="utf-8"))
         restored["optimizer_state_exact"] = False
-        path.write_text(json.dumps(restored))
+        path.write_text(json.dumps(restored), encoding="utf-8")
     else:
         (directory / "checkpoints/1000.ckpt").write_bytes(b"tampered")
     with pytest.raises(AssertionError):

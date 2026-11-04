@@ -54,7 +54,9 @@ ENDPOINT_METRICS = [
 
 
 def _json_rows(path):
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    return [
+        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+    ]
 
 
 def _statistics(values):
@@ -95,9 +97,9 @@ def _paired(rows, cohort, metric, a, b, metadata):
 
 def training_audit(output):
     """汇总梯度、裁剪、实际采样和检查点状态，核验双臂训练记录。"""
-    original = json.loads((output / "initial_restore_audit.json").read_text())
+    original = json.loads((output / "initial_restore_audit.json").read_text(encoding="utf-8"))
     for arm in ["control", "intervention"]:
-        restored = json.loads((output / arm / "restore_audit.json").read_text())
+        restored = json.loads((output / arm / "restore_audit.json").read_text(encoding="utf-8"))
         for key in [
             "file_sha256",
             "epoch",
@@ -222,7 +224,9 @@ def training_audit(output):
         assert _sha256_file(output / arm / "checkpoints/last.ckpt") == ledger[-1]["sha256"]
         assert (
             ledger[-1]["sha256"]
-            != json.loads((output / "identity.json").read_text())["base_checkpoint_sha256"]
+            != json.loads((output / "identity.json").read_text(encoding="utf-8"))[
+                "base_checkpoint_sha256"
+            ]
         )
     assert checkpoints[-1]["model_sha256"] != checkpoints[2]["model_sha256"]
     _csv(output / "checkpoint_audit.csv", checkpoints)
@@ -297,7 +301,7 @@ def evaluation_reports(output):
         ("p2_fixed", "p2_validation_manifest.json"),
         ("reserved", "reserved_validation_manifest.json"),
     ]:
-        metadata = json.loads((output / filename).read_text())
+        metadata = json.loads((output / filename).read_text(encoding="utf-8"))
         for a, b in [
             ("intervention", "control"),
             ("control", "initial"),

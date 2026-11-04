@@ -334,8 +334,8 @@ def loss_reports(output, metadata):
         (["checkpoint", "source_speaker_id"], "loss_by_speaker"),
     ]:
         _csv(output / "d2" / f"{name}.csv", summary(rows, fields, metrics))
-    best = json.loads((output / "d2/best_model.json").read_text())
-    last = json.loads((output / "d2/last_model.json").read_text())
+    best = json.loads((output / "d2/best_model.json").read_text(encoding="utf-8"))
+    last = json.loads((output / "d2/last_model.json").read_text(encoding="utf-8"))
     _json(
         output / "d2/checkpoint_comparison_validity.json",
         {

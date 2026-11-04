@@ -66,7 +66,7 @@ def sha256(path):
 def speaker_genders(path):
     """读取 VCTK 明示的 M/F 元数据，不从声音或编号推断。"""
     result = {}
-    for line in Path(path).read_text().splitlines():
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
         fields = line.split()
         if len(fields) >= 3 and fields[0].startswith("p") and fields[2] in ("M", "F"):
             result[fields[0]] = fields[2]
@@ -337,7 +337,7 @@ def analyze(input_csv, speaker_info, dataset, output):
     for path in sources:
         shutil.copyfile(path, snapshot / path.name)
     (output / "protocol.json").write_text(
-        json.dumps(protocol, ensure_ascii=False, indent=2) + "\n"
+        json.dumps(protocol, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     write_csv(output / "existing_per_sample.csv", rows)
     summaries, comparisons = statistics(rows)

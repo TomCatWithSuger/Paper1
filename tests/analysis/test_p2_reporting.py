@@ -9,6 +9,8 @@ import pytest
 from src.analysis.p1.evaluation import _csv
 from src.analysis.p2 import reporting
 
+pytestmark = pytest.mark.usefixtures("legacy_text_encoding")
+
 
 def _metadata() -> list[dict]:
     """交叉设置说话人与文本，保留两种验证分区。"""
@@ -27,7 +29,7 @@ def _metadata() -> list[dict]:
 
 def _write_inputs(output: Path, metadata: list[dict]) -> None:
     """构造各阶段的真实文件格式，不替换被测报告和聚合函数。"""
-    (output / "validation_manifest.json").write_text(json.dumps(metadata))
+    (output / "validation_manifest.json").write_text(json.dumps(metadata), encoding="utf-8")
     intervals = []
     for index, item in enumerate(metadata):
         for group_index, group in enumerate(("zero", "short", "medium", "long", "full")):
@@ -108,7 +110,8 @@ def _write_inputs(output: Path, metadata: list[dict]) -> None:
                 }
             )
         (output / f"d2/{checkpoint}_model.json").write_text(
-            json.dumps({"sha256": checkpoint, "epoch": 499 if checkpoint == "last" else 40})
+            json.dumps({"sha256": checkpoint, "epoch": 499 if checkpoint == "last" else 40}),
+            encoding="utf-8",
         )
         _csv(
             output / f"d2/{checkpoint}_original_val_pairing_audit.csv",
@@ -156,7 +159,9 @@ def test_full_report_preserves_pairing_and_bootstrap_units(tmp_path: Path) -> No
     assert len(components) == 11
     assert all(row["n_microbatch_blocks"] == 3 for row in components)
     assert all(row["mean"] == row["ci95_low"] == row["ci95_high"] == 2 for row in components)
-    validity = json.loads((tmp_path / "d2/checkpoint_comparison_validity.json").read_text())
+    validity = json.loads(
+        (tmp_path / "d2/checkpoint_comparison_validity.json").read_text(encoding="utf-8")
+    )
     assert validity["can_compare_early_vs_final"] is True
     assert validity["same_file_hash"] is False
     associations = reporting.read(tmp_path / "d1/endpoint_quality_associations.csv")

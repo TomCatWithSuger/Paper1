@@ -9,6 +9,8 @@ import soundfile as sf
 
 from src.analysis.p4 import identity, scoring, sensitivity
 
+pytestmark = pytest.mark.usefixtures("legacy_text_encoding")
+
 
 @pytest.fixture()
 def p4_inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
@@ -21,7 +23,7 @@ def p4_inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
         for name in names:
             sf.write(directory / f"{speaker}_{name}_mic1.flac", waveform, 16000)
     info = tmp_path / "speaker-info.txt"
-    info.write_text("ID AGE GENDER\np1 20 F\np2 30 M\n")
+    info.write_text("ID AGE GENDER\np1 20 F\np2 30 M\n", encoding="utf-8")
     rows = []
     for config, source_time in zip(identity.CONFIGS, (0.8, 0.9, 0.95)):
         for repeat in (0, 1):
@@ -101,7 +103,7 @@ def test_analysis_scoring_and_sensitivity(p4_inputs, monkeypatch) -> None:
     assert all(float(row["source_speaker_similarity"]) == 0 for row in scores)
     archive = np.load(output / "campplus/embeddings.npz")
     assert archive["embeddings"].shape == (audit["n_embeddings"], 2)
-    saved = json.loads((output / "protocol.json").read_text())
+    saved = json.loads((output / "protocol.json").read_text(encoding="utf-8"))
     assert saved["independent_scoring"] == "completed_campplus"
     with pytest.raises(FileExistsError):
         scoring.run(output, model)
@@ -112,7 +114,7 @@ def test_analysis_scoring_and_sensitivity(p4_inputs, monkeypatch) -> None:
     assert {row["scorer"] for row in intervals} == {"wavlm_ecapa", "campplus"}
     assert all(float(row["difference"]) == pytest.approx(0) for row in intervals)
     assert all(float(row["ci95_low"]) == pytest.approx(0) for row in intervals)
-    saved = json.loads((output / "sensitivity_protocol.json").read_text())
+    saved = json.loads((output / "sensitivity_protocol.json").read_text(encoding="utf-8"))
     assert saved["clusters"] == ["source_speaker_id", "reference_speaker_id", "source_text"]
     assert (output / "source/sensitivity.py").is_file()
     with pytest.raises(FileExistsError):
